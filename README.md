@@ -45,4 +45,3 @@ python -m PyInstaller --noconfirm --clean --noconsole --onefile --name 自动筛
 
 - 需要联网，才能查询 Modrinth / MC百科
 - 程序会移动模组文件，建议先备份或先用试运行模式
-- 某些库模组可能是“服务端可选”，不应仅凭 `client` 入口点直接判为纯客户端
