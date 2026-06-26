@@ -2011,46 +2011,66 @@ class ClassifierCore:
 
     def curseforge_search(self, meta: ModMeta) -> Optional[Classification]:
         """CurseForge 兜底查询：搜索 → 详情页 → 提取 Client/Server side"""
-        candidates: List[Tuple[int, Classification]] = []
         for query in self.collect_unique_queries(self.build_mcmod_query_tokens(meta)):
             search_key = f"cf-search::{query}"
             url = f"https://www.curseforge.com/minecraft/search?search={urllib.parse.quote(query)}"
             html = self.mcmod_text_request(search_key, url)
             if not html:
                 continue
-            # 提取搜索结果中的项目链接
+            # 提取搜索结果中 /minecraft/mc-mods/ 的项目链接
+            seen = set()
             links: List[Tuple[str, str]] = []
-            for href, raw in re.findall(r'<a[^>]+href="(/minecraft/mc-mods/[^"]+)"[^>]*>(.*?)</a>', html, flags=re.I | re.S):
-                link = urllib.parse.urljoin("https://www.curseforge.com", href.strip())
+            for href, raw in re.findall(r'<a[^>]+href="(/minecraft/mc-mods/[^"]+)"[^>]*>(.*?)</a>', html, re.I | re.S):
+                if "/download" in href or "/relations" in href or "/comments" in href:
+                    continue
                 title = re.sub(r"<.*?>", "", raw).strip()
-                if "/download" not in link and link not in {l for _, l in links}:
-                    links.append((title, link))
+                title = re.sub(r"\s+", " ", title)
+                if href not in seen and title:
+                    seen.add(href)
+                    links.append((title, "https://www.curseforge.com" + href))
             for title, link in links[:3]:
                 page_key = f"cf-page::{link}"
                 page_html = self.mcmod_text_request(page_key, link, max_attempts=3)
                 if not page_html:
                     continue
-                # 提取 Client side / Server side
-                server_text = ""
-                m = re.search(r'<span[^>]*>[Ss]erver\s*[Ss]ide</span>\s*:\s*<span[^>]*>([^<]+)</span>', page_html)
-                if m:
-                    server_text = m.group(1).strip()
-                if not server_text:
-                    continue
                 score = self.score_mcmod_page(meta, title)
                 if score < 80:
                     continue
-                server_lower = server_text.lower()
+                # 提取 Server Side（CurseForge React 渲染后在 DOM 中）
+                server_side = ""
+                client_side = ""
+                # 找 "Server Side" 标签附近的文本值
+                idx = page_html.lower().find("server side")
+                if idx >= 0:
+                    chunk = page_html[idx:idx+400]
+                    # 提取紧跟的值（Required / Optional / Unsupported）
+                    m = re.search(r'(?:Required|Optional|Unsupported)', chunk, re.I)
+                    if m:
+                        server_side = m.group(0)
+                # 也找 Client Side
+                idx2 = page_html.lower().find("client side")
+                if idx2 >= 0:
+                    chunk2 = page_html[idx2:idx2+200]
+                    m = re.search(r'(?:Required|Optional|Unsupported)', chunk2, re.I)
+                    if m:
+                        client_side = m.group(0)
+                if not server_side and not client_side:
+                    # 诊断：保存第一个详情页 HTML 供排查
+                    try:
+                        Path(tempfile.gettempdir(), "_cf_debug_detail.html").write_text(page_html[:10000], encoding="utf-8")
+                        self._dlog(f"[cf] Server Side 未匹配，HTML 已保存到 _cf_debug_detail.html")
+                    except Exception:
+                        pass
+                    continue
+                server_lower = server_side.lower() if server_side else ""
                 if "unsupported" in server_lower:
-                    candidates.append((score, Classification("client-only", "curseforge", f"CurseForge: Server={server_text}", link)))
+                    return Classification("client-only", "curseforge", f"CurseForge: Server={server_side}", link)
                 elif "required" in server_lower:
-                    candidates.append((score, Classification("server-keep", "curseforge", f"CurseForge: Server={server_text}", link)))
-            if candidates:
-                break
-        if not candidates:
-            return None
-        candidates.sort(key=lambda item: item[0], reverse=True)
-        return candidates[0][1]
+                    return Classification("server-keep", "curseforge", f"CurseForge: Server={server_side}", link)
+                elif "unsupported" in client_side.lower():
+                    return Classification("client-only", "curseforge", f"CurseForge: Client={client_side}", link)
+            break
+        return None
 
     def resolve_classification(self, meta: ModMeta, use_mcmod: bool = True) -> Classification:
         if meta.jar_status == "damaged":
