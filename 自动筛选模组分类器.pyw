@@ -742,8 +742,12 @@ class ClassifierCore:
                 t_cap = time.perf_counter()
                 self._dlog(f"[+{nav_time:.1f}s] 验证码页 {url[:60]}")
                 if self._captcha_lock.acquire(blocking=False):
-                    # 获得解决权：弹出浏览器窗口让用户手动填验证码
+                    # 获得解决权：切到验证码标签页 → 弹出浏览器窗口
                     self._dlog("[captcha] 弹出浏览器窗口，等你填验证码")
+                    try:
+                        tab.set.activate()  # 切到验证码标签页
+                    except Exception:
+                        pass
                     self._browser_show()
                     self._captcha_done.clear()
                     for _ in range(120):  # 最多等 2 分钟
