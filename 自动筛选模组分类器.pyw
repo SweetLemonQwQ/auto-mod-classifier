@@ -35,6 +35,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
+# 所有 urllib 请求不走系统代理（Modrinth API 等直连，浏览器自己走梯子）
+_urllib_no_proxy = urllib.request.ProxyHandler({})
+urllib.request.install_opener(urllib.request.build_opener(_urllib_no_proxy))
 
 APP_TITLE = "自动筛选模组分类器 2.10"
 USER_AGENT = "AutoModClassifier/2.10 (+Codex)"
