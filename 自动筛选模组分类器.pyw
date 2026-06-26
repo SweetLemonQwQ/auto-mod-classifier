@@ -667,9 +667,16 @@ class ClassifierCore:
 
     # ---- 页面判断 ----
     def _is_captcha_page(self, html: str) -> bool:
+        """检测 mc百科验证码 或 CloudFlare 拦截页面"""
         if not html:
             return False
-        return "安全验证" in html and "captcha-box" in html and "cc_captcha_answer" in html
+        # mc百科验证码
+        if "安全验证" in html and "captcha-box" in html:
+            return True
+        # CloudFlare Turnstile / 拦截
+        if len(html) < 8000 and ("Checking your browser" in html or "cf-browser-verification" in html or "Just a moment" in html):
+            return True
+        return False
 
     # ---- DrissionPage 真实浏览器（标签页池 3 并发） ----
     def _init_browser(self) -> bool:
@@ -798,7 +805,10 @@ class ClassifierCore:
                     html = tab.html
                     self._dlog(f"[captcha] 重新加载 {len(html)}B")
             else:
-                self._dlog(f"[+{nav_time:.1f}s] OK {url[:60]} ({len(html)}B)")
+                if len(html) < 5000:
+                    self._dlog(f"[+{nav_time:.1f}s] 页面太小({len(html)}B) {url[:60]}")
+                else:
+                    self._dlog(f"[+{nav_time:.1f}s] OK {url[:60]} ({len(html)}B)")
             return html
         except Exception as e:
             self._dlog(f"[+{time.perf_counter()-t0:.1f}s] 异常: {e}")
