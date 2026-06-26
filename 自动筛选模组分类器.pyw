@@ -35,9 +35,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
-# 所有 urllib 请求不走系统代理（Modrinth API 等直连，浏览器自己走梯子）
-_urllib_no_proxy = urllib.request.ProxyHandler({})
-urllib.request.install_opener(urllib.request.build_opener(_urllib_no_proxy))
 
 APP_TITLE = "自动筛选模组分类器 2.10"
 USER_AGENT = "AutoModClassifier/2.10 (+Codex)"
@@ -1513,8 +1510,10 @@ class ClassifierCore:
             for attempt in range(max_attempts):
                 self.throttle_modrinth_request()
                 req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+                # Modrinth API 直连绕过系统代理（避免梯子串行化并发）
+                _modrinth_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
                 try:
-                    with urllib.request.urlopen(req, timeout=20) as resp:
+                    with _modrinth_opener.open(req, timeout=20) as resp:
                         raw = resp.read()
                         charset = resp.headers.get_content_charset() or "utf-8"
                         payload = json.loads(raw.decode(charset, errors="ignore"))
