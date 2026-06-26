@@ -1853,8 +1853,8 @@ class ClassifierCore:
         )
 
     def http_get_text(self, url: str) -> Optional[str]:
-        # mcmod.cn：全部走真实浏览器（不再尝试 curl_cffi）
-        if "mcmod.cn" in url:
+        # mcmod.cn / curseforge.com：全部走真实浏览器
+        if "mcmod.cn" in url or "curseforge.com" in url:
             if HAS_DRISSIONPAGE:
                 return self._browser_fetch(url)
             return None
