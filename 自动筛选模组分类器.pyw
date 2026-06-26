@@ -3644,6 +3644,7 @@ class App:
 
         self.worker_thread: Optional[threading.Thread] = None
         self.ui_queue: "queue.Queue[dict]" = queue.Queue()
+        self._classifier_ref: Any = None  # 退出时关闭浏览器用
 
         self.mod_panel: Optional[PanelState] = None
         self.server_panel: Optional[PanelState] = None
@@ -3652,20 +3653,20 @@ class App:
         self.root.after(150, self.poll_queue)
 
     def _on_close(self):
-        """退出时清理浏览器进程和缓存"""
-        import subprocess, shutil
+        """退出时清理自己启动的浏览器"""
         try:
-            subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], capture_output=True, timeout=5)
-            subprocess.run(["taskkill", "/F", "/IM", "msedge.exe"], capture_output=True, timeout=5)
+            if hasattr(self, '_classifier_ref') and self._classifier_ref:
+                self._classifier_ref.close_browser()
         except Exception:
             pass
-        # 清理浏览器用户数据缓存
-        browser_dir = Path(tempfile.gettempdir()) / "_mcmod_browser_data"
-        if browser_dir.exists():
-            try:
+        # 清理浏览器用户数据缓存目录
+        try:
+            browser_dir = Path(tempfile.gettempdir()) / "_mcmod_browser_data"
+            if browser_dir.exists():
+                import shutil
                 shutil.rmtree(browser_dir, ignore_errors=True)
-            except Exception:
-                pass
+        except Exception:
+            pass
         self.root.destroy()
 
     def build_ui(self) -> None:
@@ -3912,6 +3913,7 @@ class App:
     def run_mod_task(self, mods_path: Path, dry_run: bool, use_mcmod: bool, use_curseforge: bool, enable_second_pass: bool) -> None:
         try:
             classifier = ClassifierCore()
+            self._classifier_ref = classifier
             classifier.use_curseforge = use_curseforge
             jar_files = sorted(mods_path.glob("*.jar"), key=lambda item: item.name.lower())
             if not jar_files:
@@ -4047,6 +4049,7 @@ class App:
     def run_server_task(self, client_dir: Path, output_dir: Path, use_mcmod: bool, use_curseforge: bool, enable_second_pass: bool) -> None:
         try:
             classifier = ClassifierCore()
+            self._classifier_ref = classifier
             classifier.use_curseforge = use_curseforge
             builder = ServerBuilderCore(
                 classifier=classifier,
