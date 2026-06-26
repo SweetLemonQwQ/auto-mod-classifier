@@ -7,6 +7,7 @@ REM Use this script with "/nopause" for automation.
 set "SCRIPT_DIR=%~dp0"
 set "APP_NAME="
 set "EXE_NAME="
+set "RELEASE_EXE_NAME=auto-mod-classifier-2.00.exe"
 set "ICON_FILE="
 set "ENTRY_FILE="
 set "NO_PAUSE="
@@ -55,6 +56,11 @@ if not "%BUILD_ERROR%"=="0" (
     exit /b %BUILD_ERROR%
 )
 
+if exist "%SCRIPT_DIR%dist\%EXE_NAME%" (
+    copy /Y "%SCRIPT_DIR%dist\%EXE_NAME%" "%SCRIPT_DIR%dist\%RELEASE_EXE_NAME%" >nul
+)
+
 echo.
 echo Build complete: dist\%EXE_NAME%
+echo GitHub release copy: dist\%RELEASE_EXE_NAME%
 if not defined NO_PAUSE pause
