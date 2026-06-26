@@ -703,8 +703,9 @@ class ClassifierCore:
                     user_data = Path(tempfile.gettempdir()) / "_mcmod_browser_data"
                     user_data.mkdir(parents=True, exist_ok=True)
                     co.set_user_data_path(str(user_data))
-                    co.set_argument("--window-position=-32000,-32000")
-                    co.set_argument("--window-size=800,600")
+                    # 暂时不禁用隐藏，用户需要观察浏览器行为
+                    # co.set_argument("--window-position=-32000,-32000")
+                    # co.set_argument("--window-size=800,600")
                     main = ChromiumPage(co)
                     tabs = [(main, False)]
                     for _ in range(DEFAULT_MCMOD_WORKERS + DEFAULT_CF_WORKERS + 2 - 1):
@@ -739,19 +740,11 @@ class ClassifierCore:
 
     def _browser_show(self):
         """把浏览器窗口移到屏幕可见区域（验证码需要人工时）"""
-        try:
-            self._browser_main_page.set.window.show()
-            self._browser_main_page.set.window.location(100, 100)
-            self._browser_main_page.set.window.size(800, 600)
-        except Exception:
-            pass
+        pass  # 调试模式：不移动窗口
 
     def _browser_hide(self):
         """把浏览器窗口移到屏幕外"""
-        try:
-            self._browser_main_page.set.window.location(-32000, -32000)
-        except Exception:
-            pass
+        pass  # 调试模式：不移动窗口
 
     def _browser_fetch(self, url: str) -> Optional[str]:
         """浏览器标签页池获取页面（带耗时日志）"""
@@ -2110,39 +2103,29 @@ class ClassifierCore:
                 score = self.score_mcmod_page(meta, title)
                 if score < 80:
                     continue
-                # 提取 Server Side（CurseForge React 渲染后在 DOM 中）
-                server_side = ""
-                client_side = ""
-                # 找 "Server Side" 标签附近的文本值
-                idx = page_html.lower().find("server side")
-                if idx >= 0:
-                    chunk = page_html[idx:idx+400]
-                    # 提取紧跟的值（Required / Optional / Unsupported）
-                    m = re.search(r'(?:Required|Optional|Unsupported)', chunk, re.I)
-                    if m:
-                        server_side = m.group(0)
-                # 也找 Client Side
-                idx2 = page_html.lower().find("client side")
-                if idx2 >= 0:
-                    chunk2 = page_html[idx2:idx2+200]
-                    m = re.search(r'(?:Required|Optional|Unsupported)', chunk2, re.I)
-                    if m:
-                        client_side = m.group(0)
-                if not server_side and not client_side:
-                    # 诊断：保存第一个详情页 HTML 供排查
+                # 提取 "Environment:" 标签（Client / Client & Server）
+                m = re.search(r'Environment\s*:\s*(Client(?:&amp;)?\s*(?:&amp;)?\s*Server|Client)\b', page_html, re.I)
+                if not m:
+                    # 也尝试从 span 标签提取
+                    m2 = re.search(r'<span[^>]*>\s*(Client\s*(?:&amp;)?\s*(?:&amp;)?\s*Server|Client)\s*</span>', page_html, re.I)
+                    if m2:
+                        server_side = m2.group(1).strip()
+                else:
+                    server_side = m.group(1).strip()
+                if not m and not m2:
                     try:
-                        Path(tempfile.gettempdir(), "_cf_debug_detail.html").write_text(page_html[:10000], encoding="utf-8")
-                        self._dlog(f"[cf] Server Side 未匹配，HTML 已保存到 _cf_debug_detail.html")
+                        body_start = page_html.find("<body")
+                        save_html = page_html[body_start:body_start+200000] if body_start > 0 else page_html[:200000]
+                        Path(tempfile.gettempdir(), "_cf_debug_detail.html").write_text(save_html, encoding="utf-8")
+                        self._dlog(f"[cf] Environment 未匹配，已保存 body HTML")
                     except Exception:
                         pass
                     continue
-                server_lower = server_side.lower() if server_side else ""
-                if "unsupported" in server_lower:
-                    return Classification("client-only", "curseforge", f"CurseForge: Server={server_side}", link)
-                elif "required" in server_lower:
-                    return Classification("server-keep", "curseforge", f"CurseForge: Server={server_side}", link)
-                elif "unsupported" in client_side.lower():
-                    return Classification("client-only", "curseforge", f"CurseForge: Client={client_side}", link)
+                server_side = server_side.replace("&amp;", "&")
+                if "Server" in server_side:
+                    return Classification("server-keep", "curseforge", f"CurseForge: {server_side}", link)
+                else:
+                    return Classification("client-only", "curseforge", f"CurseForge: {server_side}", link)
             break
         return None
 
