@@ -1,3 +1,4 @@
+import atexit
 import csv
 import concurrent.futures
 import difflib
@@ -16,23 +17,28 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
-import base64
 import xml.etree.ElementTree as ET
 import zipfile
-# curl_cffi: T534S 指纹+HTTP/2 模拟，绕过 Cloudflare 检测
+
 try:
     from curl_cffi import requests as curl_requests
     HAS_CURL_CFFI = True
 except ImportError:
     HAS_CURL_CFFI = False
+import cloudscraper
+try:
+    from DrissionPage import ChromiumPage, ChromiumOptions
+    HAS_DRISSIONPAGE = True
+except ImportError:
+    HAS_DRISSIONPAGE = False
+
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk, simpledialog
-import cloudscraper
+from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 
@@ -401,6 +407,22 @@ def classify_jars_parallel(
 
             if fallback and fallback.category != "unknown":
                 finish_classification(index, jar, meta, fallback)
+            # CurseForge 兜底（第三优先）
+            elif getattr(classifier, 'use_curseforge', False):
+                try:
+                    acquire_mcmod_slot()
+                    try:
+                        fallback = classifier.curseforge_search(meta)
+                    finally:
+                        release_mcmod_slot()
+                except Exception:
+                    fallback = None
+                if fallback and fallback.category != "unknown":
+                    finish_classification(index, jar, meta, fallback)
+                elif remote:
+                    finish_classification(index, jar, meta, remote)
+                else:
+                    finish_classification(index, jar, meta, local)
             elif remote:
                 finish_classification(index, jar, meta, remote)
             else:
@@ -462,6 +484,7 @@ def classify_jars_parallel(
 def rerun_unknown_classifications(
     rows: List[Dict[str, Any]],
     use_mcmod: bool,
+    use_curseforge: bool = False,
     progress_callback: Optional[Callable[[int, int, Path], None]] = None,
     result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
 ) -> int:
@@ -474,6 +497,7 @@ def rerun_unknown_classifications(
         return 0
 
     retry_classifier = ClassifierCore()
+    retry_classifier.use_curseforge = use_curseforge
     retry_results = classify_jars_parallel(
         retry_classifier,
         [row["Path"] for row in unknown_rows],
@@ -510,269 +534,241 @@ class ClassifierCore:
         self.modrinth_request_lock = threading.Lock()
         self.next_modrinth_request_at = 0.0
 
-        # --- 验证码全局锁：解决期间暂停所有 HTTP 请求 ---
-        self._captcha_pending = False             # 是否正在等待验证码解决
-        self._captcha_aborted = False            # 2次验证码尝试都失败
-        self._captcha_solved = False             # 验证码是否已被成功解决
-        self._captcha_event = threading.Event()   # 清空 = 阻塞所有请求线程
-        self._captcha_event.set()                 # 初始不阻塞
-        self._captcha_lock = threading.Lock()     # 只有一个线程处理验证码
-        # --- 验证码调试日志 ---
-        self._debug_log_file = Path(tempfile.gettempdir()) / "_mcmod_debug.log"
-        try:
-            self._debug_log_file.write_text("", encoding="utf-8")
-        except Exception:
-            pass
-
-        # --- mcmod captcha & session support ---
+        # --- mcmod 反 CloudFlare：curl_cffi + DrissionPage 浏览器 ---
         self._mcmod_session = None
         self._mcmod_cookie_file = Path(tempfile.gettempdir()) / "_mcmod_cookies.json"
         self._init_mcmod_session()
+        # 浏览器标签页池（3 标签页 = 3 并发，延迟初始化）
+        self._browser_tabs: list = []
+        self._browser_main_page = None
+        self._browser_init_lock = threading.Lock()
+        self._browser_tab_cond = threading.Condition()
+        # 验证码全局锁：同一时刻只弹一个窗口
+        self._captcha_lock = threading.Lock()
+        self._captcha_done = threading.Event()
+        self._captcha_done.set()
+        # CurseForge 开关
+        self.use_curseforge: bool = False
+        # 全局限流状态
+        self._mcmod_global_rate_limited = False
+        # 调试日志
+        self._dlog_file = Path(tempfile.gettempdir()) / "_mcmod_debug.log"
+        try:
+            self._dlog_file.write_text("", encoding="utf-8")
+        except Exception:
+            pass
 
-    def _init_mcmod_session(self) -> None:
-        """Initialize session for mcmod.cn (curl_cffi preferred for TLS fingerprinting)"""
+    # ---- 调试日志 ----
+    def _dlog(self, msg: str) -> None:
+        try:
+            with open(self._dlog_file, "a", encoding="utf-8") as f:
+                f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+        except Exception:
+            pass
+
+    # ---- curl_cffi 会话 ----
+    def _init_mcmod_session(self):
         try:
             if HAS_CURL_CFFI:
-                self._mcmod_session = curl_requests.Session()
-                self._mcmod_session.impersonate = "chrome124"
+                s = curl_requests.Session()
+                for target in ("chrome131", "chrome124"):
+                    try:
+                        s.impersonate = target
+                        break
+                    except Exception:
+                        continue
+                s.headers.update({
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24"',
+                    "Sec-Ch-Ua-Mobile": "?0",
+                    "Sec-Ch-Ua-Platform": '"Windows"',
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Upgrade-Insecure-Requests": "1",
+                })
             else:
-                self._mcmod_session = cloudscraper.create_scraper(
-                    browser={"browser": "chrome", "platform": "windows", "mobile": False}
-                )
+                s = cloudscraper.create_scraper(browser={"browser": "chrome", "platform": "windows", "mobile": False})
+            self._mcmod_session = s
             if self._mcmod_cookie_file.exists():
                 try:
                     with open(self._mcmod_cookie_file, "r", encoding="utf-8") as f:
                         cookies = json.load(f)
-                    for key, value in cookies.items():
-                        self._mcmod_session.cookies.set(key, value)
+                    for k, v in cookies.items():
+                        s.cookies.set(k, v)
                 except Exception:
                     pass
         except Exception:
             self._mcmod_session = None
 
-    def _dlog(self, msg: str) -> None:
-        """Write captcha debug log to temp file"""
-        try:
-            with open(self._debug_log_file, "a", encoding="utf-8") as f:
-                f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
-        except Exception:
-            pass
-
-    def _save_mcmod_cookies(self) -> None:
-        """Save mcmod session cookies to file"""
-        session = self._mcmod_session
-        if not session:
+    def _save_mcmod_cookies(self):
+        s = self._mcmod_session
+        if not s:
             return
         try:
-            cookies = session.cookies.get_dict()
-            if cookies:
+            c = s.cookies.get_dict()
+            if c:
                 with open(self._mcmod_cookie_file, "w", encoding="utf-8") as f:
-                    json.dump(cookies, f, ensure_ascii=False, indent=2)
+                    json.dump(c, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
-    def _wait_captcha(self) -> None:
-        """If captcha is being solved, block this request thread"""
-        self._captcha_event.wait()
+    # ---- 页面判断 ----
+    def _is_captcha_page(self, html: str) -> bool:
+        if not html:
+            return False
+        return "安全验证" in html and "captcha-box" in html and "cc_captcha_answer" in html
 
-    def _begin_captcha_solve(self) -> str:
-        """获取验证码解决权，返回三态字符串:
-        'solve' — 调用者应弹出对话框解决验证码
-        'retry' — 另一个线程已解决验证码，调用者应重试请求
-        'abort' — 验证码已放弃（2次失败），跳过 mcmod
-        在锁外等待以避免死锁。"""
-        need_wait = False
-        with self._captcha_lock:
-            if self._captcha_pending:
-                need_wait = True
-            elif self._captcha_solved:
-                return 'retry'
-            elif self._captcha_aborted:
-                # 之前的验证码已放弃，但现在遇到了新的验证码页面，重置状态重试
-                self._captcha_aborted = False
-                self._captcha_solved = False
-                self._captcha_pending = True
-                self._captcha_event.clear()
-                return 'solve'
-            else:
-                self._captcha_pending = True
-                self._captcha_event.clear()
-                return 'solve'
-        if need_wait:
-            self._captcha_event.wait()
-            with self._captcha_lock:
-                if self._captcha_aborted:
-                    return 'abort'
-                if self._captcha_solved:
-                    return 'retry'
-            # 其他情况也被视为已解决，让调用者重试
-            return 'retry'
-        return 'solve'
-
-    def _end_captcha_solve(self, success: bool = False) -> None:
-        """释放全局验证码锁，唤醒所有等待的请求线程。
-        success: 验证码是否被正确解决。"""
-        with self._captcha_lock:
-            self._captcha_pending = False
-            self._captcha_solved = success
-            if not success:
-                self._captcha_aborted = True
-            self._captcha_event.set()
-
-    def _verify_cookies_both_domains(self) -> None:
-        """验证 cookies 对 search.mcmod.cn 和 www.mcmod.cn 都有效（不重复解决验证码）"""
-        session = self._mcmod_session
-        if not session:
-            return
-        for test_url in (
-            "https://www.mcmod.cn/class/1.html",
-            "https://search.mcmod.cn/",
-        ):
-            try:
-                r = session.get(test_url, timeout=10)
-                if self._is_captcha_page(r.text):
-                    pass  # 另一个子域名也需要验证码：跳过，等自然请求触发
-            except Exception:
-                pass
-
-    def _extract_captcha_image(self, html: str) -> Optional[bytes]:
-        """Extract base64 captcha image from captcha HTML"""
-        idx = html.find("data:image/png;base64,")
-        if idx < 0:
-            return None
-        start = idx + len("data:image/png;base64,")
-        end = html.find('"', start)
-        if end < 0:
-            return None
-        b64_data = html[start:end]
-        try:
-            return base64.b64decode(b64_data)
-        except Exception:
-            return None
-
-    def _show_captcha_dialog(self, img_path: Path, question: str, attempt: int) -> Optional[str]:
-        """嵌入式验证码对话框：图片嵌在窗口内 + 问题文字 + 输入框 + 确认按钮。
-        通过 tk._default_root.after(0, ...) 在主线程创建，避免二级 Tk 问题。"""
-        result: List[Optional[str]] = [None]
-        done = threading.Event()
-
-        def _build() -> None:
+    # ---- DrissionPage 真实浏览器（标签页池 3 并发） ----
+    def _init_browser(self) -> bool:
+        if not HAS_DRISSIONPAGE:
+            return False
+        with self._browser_init_lock:
+            if self._browser_tabs:
+                return True
+            paths = [
+                None,
+                Path(os.environ.get("ProgramFiles", "C:\\Program Files")) / "Google/Chrome/Application/chrome.exe",
+                Path(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)")) / "Google/Chrome/Application/chrome.exe",
+                Path(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)")) / "Microsoft/Edge/Application/msedge.exe",
+                Path(os.environ.get("ProgramFiles", "C:\\Program Files")) / "Microsoft/Edge/Application/msedge.exe",
+            ]
+            for bp in paths:
+                try:
+                    co = ChromiumOptions()
+                    if bp is not None and bp.exists():
+                        co.set_browser_path(str(bp))
+                    co.set_argument("--disable-blink-features=AutomationControlled")
+                    co.set_argument("--disable-features=TranslateUI")
+                    co.set_argument("--no-first-run")
+                    user_data = Path(tempfile.gettempdir()) / "_mcmod_browser_data"
+                    user_data.mkdir(parents=True, exist_ok=True)
+                    co.set_user_data_path(str(user_data))
+                    co.set_argument("--window-position=-32000,-32000")
+                    co.set_argument("--window-size=800,600")
+                    main = ChromiumPage(co)
+                    tabs = [(main, False)]
+                    for _ in range(DEFAULT_MCMOD_WORKERS - 1):
+                        try:
+                            tabs.append((main.new_tab(), False))
+                        except Exception:
+                            break
+                    self._browser_tabs = tabs
+                    self._browser_main_page = main
+                    atexit.register(self._cleanup_browser)
+                    self._dlog(f"浏览器就绪(屏幕外): {len(tabs)} 标签页")
+                    return True
+                except Exception:
+                    continue
+            self._dlog("浏览器启动失败：未找到 Chrome/Edge")
             try:
                 root = tk._default_root
-                if not root or not root.winfo_exists():
-                    # 如果主窗口已不存在，用 simpledialog 兜底
-                    a = simpledialog.askstring(
-                        f"MC百科 验证码 ({attempt + 1}/2)",
-                        f"请在打开的图片中查看验证码，输入答案：\n\n{question}",
-                    )
-                    result[0] = a
-                    done.set()
-                    return
-
-                dlg = tk.Toplevel(root)
-                dlg.title(f"MC百科 验证码 ({attempt + 1}/2)")
-                dlg.resizable(False, False)
-                dlg.attributes("-topmost", True)
-
-                # 图片
-                photo = tk.PhotoImage(file=str(img_path))
-                tk.Label(dlg, image=photo).pack(padx=12, pady=8)
-                dlg._photo = photo  # 防止 GC
-
-                # 问题文字
-                if question:
-                    tk.Label(dlg, text=question, font=("", 12, "bold"),
-                             wraplength=280).pack(padx=12, pady=(0, 6))
-
-                # 输入框
-                var = tk.StringVar()
-                entry = tk.Entry(dlg, textvariable=var, font=("", 14),
-                                 width=10, justify="center")
-                entry.pack(padx=12, pady=4)
-                entry.focus_set()
-
-                def submit() -> None:
-                    result[0] = var.get()
-                    dlg.destroy()
-                    done.set()
-
-                dlg.protocol("WM_DELETE_WINDOW", lambda: (dlg.destroy(), done.set()))
-                tk.Button(dlg, text="确认", command=submit, width=10).pack(padx=12, pady=10)
-                dlg.bind("<Return>", lambda e: submit())
-                dlg.grab_set()
-                dlg.wait_window()
+                if root and root.winfo_exists():
+                    root.after(0, lambda: messagebox.showwarning(APP_TITLE, "未找到 Chrome 或 Edge 浏览器，MC百科/CurseForge 查询将不可用。\n\n请安装 Chrome 或确保 Edge 在默认路径。"))
             except Exception:
-                done.set()
+                pass
+            return False
 
-        # 在主线程创建对话框
+    def _cleanup_browser(self):
+        with self._browser_init_lock:
+            if self._browser_tabs:
+                try:
+                    self._browser_tabs[0][0].quit()
+                except Exception:
+                    pass
+                self._browser_tabs = []
+
+    def _browser_show(self):
+        """把浏览器窗口移到屏幕可见区域（验证码需要人工时）"""
         try:
-            root = tk._default_root
-            if root and root.winfo_exists():
-                root.after(0, _build)
-            else:
-                _build()
-        except Exception:
-            _build()
-
-        done.wait()
-        return result[0]
-
-    def _solve_mcmod_captcha(self, captcha_html: str, url: str) -> bool:
-        """Centralized captcha: embedded dialog, max 2 attempts, blocks all request threads while solving"""
-        for attempt in range(2):
-            img_data = self._extract_captcha_image(captcha_html)
-            if not img_data:
-                return False
-
-            q_match = re.search(r'<p class="captcha-question">(.*?)</p>', captcha_html, re.DOTALL)
-            question = ""
-            if q_match:
-                question = re.sub(r"<[^>]+>", "", q_match.group(1)).strip()
-
-            tmp_dir = Path(tempfile.gettempdir()) / "_mcmod_captcha"
-            tmp_dir.mkdir(parents=True, exist_ok=True)
-            img_path = tmp_dir / "captcha.png"
-            try:
-                img_path.write_bytes(img_data)
-            except Exception:
-                return False
-
-            answer = self._show_captcha_dialog(img_path, question, attempt)
-            if not answer or not answer.strip():
-                return False
-
-            session = self._mcmod_session
-            if not session:
-                return False
-            try:
-                r = session.post(
-                    url,
-                    data={"cc_captcha_answer": answer.strip(), "cc_captcha_submit": "1"},
-                    timeout=15,
-                )
-                if r.status_code == 200 and "安全验证" not in r.text:
-                    # 验证成功
-                    self._save_mcmod_cookies()
-                    self._dlog(f"CAPTCHA_OK POST {url[:80]} -> {r.status_code} len={len(r.text)}")
-                    return True
-                elif r.status_code == 200:
-                    # 答案错误 — 重新获取验证码页面（换一张图）
-                    self._dlog(f"CAPTCHA_RETRY POST {url[:80]} -> {r.status_code} still captcha")
-                    captcha_html = r.text
-                    continue
-                return False
-            except Exception:
-                return False
-        # 2 次均失败
-        try:
-            self._dlog(f"CAPTCHA_ABORT url={url[:80]} after 2 attempts")
-            tk.messagebox.showerror(
-                "MC百科 验证码失败",
-                "验证码已连续 2 次输入错误，已跳过 MC百科 查询。\n\n部分模组可能无法通过 MC百科 获取分类信息。"
-            )
+            self._browser_main_page.set.window.show()
+            self._browser_main_page.set.window.location(100, 100)
+            self._browser_main_page.set.window.size(800, 600)
         except Exception:
             pass
-        return False
+
+    def _browser_hide(self):
+        """把浏览器窗口移到屏幕外"""
+        try:
+            self._browser_main_page.set.window.location(-32000, -32000)
+        except Exception:
+            pass
+
+    def _browser_fetch(self, url: str) -> Optional[str]:
+        """浏览器标签页池获取页面（带耗时日志）"""
+        t0 = time.perf_counter()
+        if not self._browser_tabs and not self._init_browser():
+            return None
+        tab = None
+        with self._browser_tab_cond:
+            for i, (t, busy) in enumerate(self._browser_tabs):
+                if not busy:
+                    tab = t
+                    self._browser_tabs[i] = (t, True)
+                    break
+        if tab is None:
+            self._dlog(f"[{time.perf_counter()-t0:.1f}s] 无空闲标签页")
+            return None
+        try:
+            t_nav_start = time.perf_counter()
+            tab.get(url, timeout=15)
+            nav_time = time.perf_counter() - t_nav_start
+            html = tab.html
+            if self._is_captcha_page(html):
+                t_cap = time.perf_counter()
+                self._dlog(f"[+{nav_time:.1f}s] 验证码页 {url[:60]}")
+                if self._captcha_lock.acquire(blocking=False):
+                    # 获得解决权：弹出浏览器窗口让用户手动填验证码
+                    self._dlog("[captcha] 弹出浏览器窗口，等你填验证码")
+                    self._browser_show()
+                    self._captcha_done.clear()
+                    for _ in range(120):  # 最多等 2 分钟
+                        time.sleep(1)
+                        try:
+                            html = tab.html
+                        except Exception:
+                            continue
+                        if not self._is_captcha_page(html) and len(html) > 200:
+                            self._dlog(f"[captcha] 验证码通过 {time.perf_counter()-t_cap:.1f}s")
+                            break
+                    self._browser_hide()
+                    self._captcha_done.set()
+                    self._captcha_lock.release()
+                else:
+                    # 另一个标签页正在处理，等待它完成
+                    self._dlog("[captcha] 等另一个标签页的验证码解决")
+                    self._captcha_done.wait(timeout=130)
+                    # 重新加载本标签页
+                    tab.get(url, timeout=15)
+                    html = tab.html
+                    self._dlog(f"[captcha] 重新加载 {len(html)}B")
+            else:
+                self._dlog(f"[+{nav_time:.1f}s] OK {url[:60]} ({len(html)}B)")
+            return html
+        except Exception as e:
+            self._dlog(f"[+{time.perf_counter()-t0:.1f}s] 异常: {e}")
+            return None
+        finally:
+            with self._browser_tab_cond:
+                for i, (t, _) in enumerate(self._browser_tabs):
+                    if t is tab:
+                        self._browser_tabs[i] = (t, False)
+                        break
+                self._browser_tab_cond.notify()
+
+    def _browser_export_cookies(self):
+        if not self._browser_tabs or not self._mcmod_session:
+            return
+        try:
+            for c in self._browser_tabs[0][0].cookies():
+                self._mcmod_session.cookies.set(c.get("name", ""), c.get("value", ""))
+            self._save_mcmod_cookies()
+            self._dlog("浏览器 cookies 已同步到 curl_cffi")
+        except Exception:
+            pass
+
     def normalize_text(self, text: str, strip_brackets: bool = True) -> str:
         if not text:
             return ""
@@ -1335,7 +1331,7 @@ class ClassifierCore:
                 time.sleep(self.next_request_at - now)
             self.next_request_at = time.monotonic() + interval
 
-    def throttle_mcmod_request(self, interval_ms: int = 350) -> None:
+    def throttle_mcmod_request(self, interval_ms: int = 80) -> None:
         interval = interval_ms / 1000
         if interval <= 0:
             return
@@ -1381,20 +1377,14 @@ class ClassifierCore:
             self.next_modrinth_request_at = max(self.next_modrinth_request_at, next_at)
 
     def is_mcmod_rate_limited(self, html: str) -> bool:
-        """检测是否为限流页面（非验证码页面）"""
         if not html:
             return False
-        return "搜索太频繁，请稍后再试" in html or "鎼滅储澶绻侊紝璇风◢鍚庡啀璇" in html
+        return "搜索太频繁" in html or "稍后再试" in html or "鎼滅储澶" in html
 
-    def _is_captcha_page(self, html: str) -> bool:
-        """Detect mcmod captcha page"""
-        if not html:
-            return False
-        return "安全验证" in html and "captcha-box" in html and "cc_captcha_answer" in html
     def mcmod_text_request(self, cache_key: str, url: str, max_attempts: int = 4) -> str:
         with self.cache_lock:
             cached = self.cache.get(cache_key)
-            if isinstance(cached, str) and cached and not self.is_mcmod_rate_limited(cached):
+            if isinstance(cached, str) and cached and not self.is_mcmod_rate_limited(cached) and not self._is_captcha_page(cached):
                 return cached
             wait_event = self.inflight_requests.get(cache_key)
             owner = wait_event is None
@@ -1407,67 +1397,40 @@ class ClassifierCore:
             wait_event.wait()
             with self.cache_lock:
                 cached = self.cache.get(cache_key)
-            if isinstance(cached, str) and cached and not self.is_mcmod_rate_limited(cached):
+            if isinstance(cached, str) and cached and not self.is_mcmod_rate_limited(cached) and not self._is_captcha_page(cached):
                 return cached
             return ""
 
         last_html = ""
-        captcha_solved = False
         try:
-            for attempt in range(max_attempts + 3):  # 额外给验证码解决留次数
-                # 始终节流，避免被 MC百科 限流
+            for attempt in range(max_attempts):
                 try:
                     self.throttle_request()
                     self.throttle_mcmod_request()
-                except Exception:
-                    pass
-                try:
                     html = self.http_get_text(url) or ""
                 except Exception:
                     html = ""
                 last_html = html
                 if html:
                     if self._is_captcha_page(html):
-                        # 检测到验证码页面 — 集中式解决（阻塞所有请求线程）
-                        if not captcha_solved:
-                            solve_need = self._begin_captcha_solve()
-                            if solve_need == 'solve':
-                                # 每 URL 最多弹 2 次验证码，超过则跳过 mcmod
-                                if not hasattr(self, '_captcha_retries_per_url'):
-                                    self._captcha_retries_per_url = {}
-                                url_retries = self._captcha_retries_per_url.get(cache_key, 0) + 1
-                                self._captcha_retries_per_url[cache_key] = url_retries
-                                if url_retries > 2:
-                                    self._end_captcha_solve(False)
-                                    break
-                                # 我是被选中的线程，弹出对话框解决验证码
-                                try:
-                                    captcha_solved = self._solve_mcmod_captcha(html, url)
-                                finally:
-                                    self._end_captcha_solve(captcha_solved)
-                                # 验证码刚解完，等 2 秒再发请求，避免被限流
-                                if captcha_solved:
-                                    time.sleep(2.0)
-                            elif solve_need == 'retry':
-                                captcha_solved = True
-                            else:  # 'abort' 已放弃
-                                break
-                        else:
-                            with self._captcha_lock:
-                                self._captcha_solved = False
-                            captcha_solved = False
-                            continue
-                        if captcha_solved:
-                            self._verify_cookies_both_domains()
+                        if not hasattr(self, '_mcmod_captcha_hits'):
+                            self._mcmod_captcha_hits = {}
+                        hits = self._mcmod_captcha_hits.get(cache_key, 0) + 1
+                        self._mcmod_captcha_hits[cache_key] = hits
+                        self._dlog(f"[{cache_key[:30]}] 验证码 #{hits} url={url[:80]}")
+                        # 浏览器已经在 http_get_text 里尝试过了，这里只是记录
+                        time.sleep(0.3 * (attempt + 1))
                         continue
                     elif not self.is_mcmod_rate_limited(html):
-                        # 正常结果，缓存后返回
+                        self._dlog(f"[{cache_key[:30]}] OK {len(html)} 字节")
                         with self.cache_lock:
                             self.cache[cache_key] = html
                         return html
-                # 限流则等待后重试（始终等待，不论是否刚解完验证码）
-                time.sleep(0.35 * (attempt + 1))
-            return last_html if last_html and not self.is_mcmod_rate_limited(last_html) and not self._is_captcha_page(last_html) else ""
+                    else:
+                        self._dlog(f"[{cache_key[:30]}] 限流，重试")
+                time.sleep(0.2 * (attempt + 1))
+            self._dlog(f"[{cache_key[:30]}] 放弃（{max_attempts}次未成功）")
+            return ""
         finally:
             with self.cache_lock:
                 event = self.inflight_requests.pop(cache_key, None)
@@ -1514,7 +1477,6 @@ class ClassifierCore:
 
     def modrinth_json_request(self, cache_key: str, url: str, max_attempts: int = 3) -> Optional[dict]:
         def loader() -> Optional[dict]:
-            self._wait_captcha()  # 验证码解决期间暂停所有 Modrinth 请求
             last_payload: Optional[dict] = None
             for attempt in range(max_attempts):
                 self.throttle_modrinth_request()
@@ -1792,7 +1754,6 @@ class ClassifierCore:
         return Classification("unknown", "local", "本地元数据不足")
 
     def http_get_json(self, url: str) -> Optional[dict]:
-        self._wait_captcha()
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=20) as resp:
             raw = resp.read()
@@ -1842,20 +1803,12 @@ class ClassifierCore:
         )
 
     def http_get_text(self, url: str) -> Optional[str]:
-        self._wait_captcha()
-        # mcmod.cn 使用 cloudscraper 会话（支持 cookies 和验证码）
+        # mcmod.cn：全部走真实浏览器（不再尝试 curl_cffi）
         if "mcmod.cn" in url:
-            session = self._mcmod_session
-            if session:
-                try:
-                    r = session.get(url, timeout=20)
-                    self._dlog(f"GET {url[:80]} -> {r.status_code} len={len(r.text)}")
-                    # 更新 cookies
-                    self._save_mcmod_cookies()
-                    return r.text
-                except Exception:
-                    return None
-        # 其他请求保持原有的 urllib
+            if HAS_DRISSIONPAGE:
+                return self._browser_fetch(url)
+            return None
+        # 其他请求保持原有 urllib
         req = urllib.request.Request(
             url,
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
@@ -2051,6 +2004,49 @@ class ClassifierCore:
                 elif "服务端需装" in env_text or "服务端可选" in env_text or "服务端支持" in env_text:
                     candidates.append((score, Classification("server-keep", "mcmod", f"MC百科: {env_text}", link)))
 
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[0][1]
+
+    def curseforge_search(self, meta: ModMeta) -> Optional[Classification]:
+        """CurseForge 兜底查询：搜索 → 详情页 → 提取 Client/Server side"""
+        candidates: List[Tuple[int, Classification]] = []
+        for query in self.collect_unique_queries(self.build_mcmod_query_tokens(meta)):
+            search_key = f"cf-search::{query}"
+            url = f"https://www.curseforge.com/minecraft/search?search={urllib.parse.quote(query)}"
+            html = self.mcmod_text_request(search_key, url)
+            if not html:
+                continue
+            # 提取搜索结果中的项目链接
+            links: List[Tuple[str, str]] = []
+            for href, raw in re.findall(r'<a[^>]+href="(/minecraft/mc-mods/[^"]+)"[^>]*>(.*?)</a>', html, flags=re.I | re.S):
+                link = urllib.parse.urljoin("https://www.curseforge.com", href.strip())
+                title = re.sub(r"<.*?>", "", raw).strip()
+                if "/download" not in link and link not in {l for _, l in links}:
+                    links.append((title, link))
+            for title, link in links[:3]:
+                page_key = f"cf-page::{link}"
+                page_html = self.mcmod_text_request(page_key, link, max_attempts=3)
+                if not page_html:
+                    continue
+                # 提取 Client side / Server side
+                server_text = ""
+                m = re.search(r'<span[^>]*>[Ss]erver\s*[Ss]ide</span>\s*:\s*<span[^>]*>([^<]+)</span>', page_html)
+                if m:
+                    server_text = m.group(1).strip()
+                if not server_text:
+                    continue
+                score = self.score_mcmod_page(meta, title)
+                if score < 80:
+                    continue
+                server_lower = server_text.lower()
+                if "unsupported" in server_lower:
+                    candidates.append((score, Classification("client-only", "curseforge", f"CurseForge: Server={server_text}", link)))
+                elif "required" in server_lower:
+                    candidates.append((score, Classification("server-keep", "curseforge", f"CurseForge: Server={server_text}", link)))
+            if candidates:
+                break
         if not candidates:
             return None
         candidates.sort(key=lambda item: item[0], reverse=True)
@@ -2824,6 +2820,7 @@ class ServerBuilderCore:
                 recovered = rerun_unknown_classifications(
                     results,
                     self.use_mcmod,
+                    getattr(self.classifier, 'use_curseforge', False),
                     progress_callback=second_pass_progress,
                     result_callback=second_pass_result,
                 )
@@ -3583,15 +3580,18 @@ class App:
         self.root.title(APP_TITLE)
         self.root.geometry("980x760")
         self.root.minsize(920, 680)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.mod_path_var = tk.StringVar()
         self.mod_dry_run_var = tk.BooleanVar(value=False)
         self.mod_use_mcmod_var = tk.BooleanVar(value=True)
+        self.mod_use_cf_var = tk.BooleanVar(value=True)
         self.mod_second_pass_var = tk.BooleanVar(value=False)
 
         self.server_client_path_var = tk.StringVar()
         self.server_output_path_var = tk.StringVar()
         self.server_use_mcmod_var = tk.BooleanVar(value=True)
+        self.server_use_cf_var = tk.BooleanVar(value=True)
         self.server_second_pass_var = tk.BooleanVar(value=False)
 
         self.worker_thread: Optional[threading.Thread] = None
@@ -3602,6 +3602,17 @@ class App:
 
         self.build_ui()
         self.root.after(150, self.poll_queue)
+
+    def _on_close(self):
+        """退出时清理浏览器进程"""
+        try:
+            # 尝试清理可能存在的浏览器进程
+            import subprocess
+            subprocess.run(["taskkill", "/F", "/IM", "chrome.exe", "/FI", "WINDOWTITLE eq *mcmod*"], capture_output=True)
+            subprocess.run(["taskkill", "/F", "/IM", "msedge.exe", "/FI", "WINDOWTITLE eq *mcmod*"], capture_output=True)
+        except Exception:
+            pass
+        self.root.destroy()
 
     def build_ui(self) -> None:
         main = ttk.Frame(self.root, padding=12)
@@ -3626,9 +3637,10 @@ class App:
 
         options = ttk.Frame(parent, padding=(0, 12, 0, 0))
         options.pack(fill="x")
-        ttk.Checkbutton(options, text="仅试运行，不移动文件", variable=self.mod_dry_run_var).pack(side="left")
-        ttk.Checkbutton(options, text="启用 MC百科 兜底查询", variable=self.mod_use_mcmod_var).pack(side="left", padx=(18, 0))
-        ttk.Checkbutton(options, text="启用 2次筛选（仅重试 unknown）", variable=self.mod_second_pass_var).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(options, text="仅试运行", variable=self.mod_dry_run_var).pack(side="left")
+        ttk.Checkbutton(options, text="MC百科", variable=self.mod_use_mcmod_var).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(options, text="CurseForge", variable=self.mod_use_cf_var).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(options, text="2次筛选", variable=self.mod_second_pass_var).pack(side="left", padx=(18, 0))
         ttk.Button(options, text="开始分类", command=self.start_mod_task).pack(side="right")
 
         status_var = tk.StringVar(value="请选择 mods 目录。")
@@ -3647,7 +3659,7 @@ class App:
         log_widget.pack(fill="both", expand=True)
 
         bottom = ttk.Frame(parent, padding=(0, 12, 0, 0))
-        bottom.pack(fill="x")
+        bottom.pack(fill="x", side="bottom")
         ttk.Button(bottom, text="打开结果目录", command=lambda: self.open_panel_path("mod", "result")).pack(side="left")
         ttk.Button(bottom, text="退出", command=self.root.destroy).pack(side="right")
 
@@ -3666,8 +3678,9 @@ class App:
 
         options = ttk.Frame(parent, padding=(0, 12, 0, 0))
         options.pack(fill="x")
-        ttk.Checkbutton(options, text="模组筛选时启用 MC百科 兜底查询", variable=self.server_use_mcmod_var).pack(side="left")
-        ttk.Checkbutton(options, text="模组筛选启用 2次筛选", variable=self.server_second_pass_var).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(options, text="MC百科", variable=self.server_use_mcmod_var).pack(side="left")
+        ttk.Checkbutton(options, text="CurseForge", variable=self.server_use_cf_var).pack(side="left", padx=(18, 0))
+        ttk.Checkbutton(options, text="2次筛选", variable=self.server_second_pass_var).pack(side="left", padx=(18, 0))
         ttk.Button(options, text="开始制作服务端", command=self.start_server_task).pack(side="right")
 
         status_var = tk.StringVar(value="请选择客户端目录和新的空服务端目录。")
@@ -3686,7 +3699,7 @@ class App:
         log_widget.pack(fill="both", expand=True)
 
         bottom = ttk.Frame(parent, padding=(0, 12, 0, 0))
-        bottom.pack(fill="x")
+        bottom.pack(fill="x", side="bottom")
         ttk.Button(bottom, text="打开服务端目录", command=lambda: self.open_panel_path("server", "result")).pack(side="left")
         ttk.Button(bottom, text="打开日志目录", command=lambda: self.open_panel_path("server", "extra")).pack(side="left", padx=(8, 0))
         ttk.Button(bottom, text="退出", command=self.root.destroy).pack(side="right")
@@ -3737,7 +3750,7 @@ class App:
         self.get_panel("mod").status_var.set("准备开始…")
         self.worker_thread = threading.Thread(
             target=self.run_mod_task,
-            args=(path, self.mod_dry_run_var.get(), self.mod_use_mcmod_var.get(), self.mod_second_pass_var.get()),
+            args=(path, self.mod_dry_run_var.get(), self.mod_use_mcmod_var.get(), self.mod_use_cf_var.get(), self.mod_second_pass_var.get()),
             daemon=True,
         )
         self.worker_thread.start()
@@ -3762,7 +3775,7 @@ class App:
         self.get_panel("server").status_var.set("准备开始…")
         self.worker_thread = threading.Thread(
             target=self.run_server_task,
-            args=(Path(client_dir), Path(output_dir), self.server_use_mcmod_var.get(), self.server_second_pass_var.get()),
+            args=(Path(client_dir), Path(output_dir), self.server_use_mcmod_var.get(), self.server_use_cf_var.get(), self.server_second_pass_var.get()),
             daemon=True,
         )
         self.worker_thread.start()
@@ -3842,9 +3855,10 @@ class App:
 
         self.root.after(150, self.poll_queue)
 
-    def run_mod_task(self, mods_path: Path, dry_run: bool, use_mcmod: bool, enable_second_pass: bool) -> None:
+    def run_mod_task(self, mods_path: Path, dry_run: bool, use_mcmod: bool, use_curseforge: bool, enable_second_pass: bool) -> None:
         try:
             classifier = ClassifierCore()
+            classifier.use_curseforge = use_curseforge
             jar_files = sorted(mods_path.glob("*.jar"), key=lambda item: item.name.lower())
             if not jar_files:
                 raise RuntimeError("所选目录中没有找到 jar 模组。")
@@ -3900,6 +3914,7 @@ class App:
                     recovered = rerun_unknown_classifications(
                         results,
                         use_mcmod,
+                        use_curseforge,
                         progress_callback=second_pass_progress,
                         result_callback=second_pass_result,
                     )
@@ -3972,9 +3987,10 @@ class App:
         except Exception:
             self.emit("mod", "error", traceback.format_exc())
 
-    def run_server_task(self, client_dir: Path, output_dir: Path, use_mcmod: bool, enable_second_pass: bool) -> None:
+    def run_server_task(self, client_dir: Path, output_dir: Path, use_mcmod: bool, use_curseforge: bool, enable_second_pass: bool) -> None:
         try:
             classifier = ClassifierCore()
+            classifier.use_curseforge = use_curseforge
             builder = ServerBuilderCore(
                 classifier=classifier,
                 log=lambda message: self.emit("server", "log", message),
