@@ -700,7 +700,7 @@ class ClassifierCore:
                     co.set_argument("--window-size=800,600")
                     main = ChromiumPage(co)
                     tabs = [(main, False)]
-                    for _ in range(DEFAULT_MCMOD_WORKERS + DEFAULT_CF_WORKERS - 1):
+                    for _ in range(DEFAULT_MCMOD_WORKERS + DEFAULT_CF_WORKERS + 2 - 1):
                         try:
                             tabs.append((main.new_tab(), False))
                         except Exception:
@@ -764,6 +764,9 @@ class ClassifierCore:
         try:
             t_nav_start = time.perf_counter()
             tab.get(url, timeout=15)
+            # CurseForge React 渲染需要额外等待
+            if "curseforge.com" in url:
+                time.sleep(2)
             nav_time = time.perf_counter() - t_nav_start
             html = tab.html
             if self._is_captcha_page(html):
@@ -2067,6 +2070,13 @@ class ClassifierCore:
             html = self.mcmod_text_request(search_key, url)
             if not html:
                 continue
+            # 诊断：保存搜索页 HTML
+            if len(html) < 10000:
+                try:
+                    Path(tempfile.gettempdir(), "_cf_debug_search.html").write_text(html, encoding="utf-8")
+                    self._dlog(f"[cf] 搜索页太小({len(html)}B)，已保存 _cf_debug_search.html")
+                except Exception:
+                    pass
             # 提取搜索结果中 /minecraft/mc-mods/ 的项目链接
             seen = set()
             links: List[Tuple[str, str]] = []
