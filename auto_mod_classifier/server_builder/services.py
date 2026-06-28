@@ -841,8 +841,13 @@ class ServerLaunchService:
         ]
 
     def write_batch_script(self, script_path: Path, lines: Sequence[str]) -> Path:
+        # 批处理在中文目录里被 cmd 直接拉起时，先切到 UTF-8 代码页更稳。
+        normalized_lines = list(lines)
+        if normalized_lines and normalized_lines[0].strip().lower() == "@echo off":
+            if len(normalized_lines) == 1 or normalized_lines[1].strip().lower() != "chcp 65001>nul":
+                normalized_lines.insert(1, "chcp 65001>nul")
         script_path.parent.mkdir(parents=True, exist_ok=True)
-        script_path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+        script_path.write_text("\r\n".join(normalized_lines) + "\r\n", encoding="utf-8")
         return script_path
 
     def get_run_bat_path(self, output_root: Path) -> Path:
