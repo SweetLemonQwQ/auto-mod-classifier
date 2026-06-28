@@ -169,7 +169,7 @@ class QtPageFactory:
         title_label = BodyLabel(title, self.app)
         title_label.setFixedWidth(90)
         title_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; background: transparent; font-size: {FONT_SIZE_XS}px;"
+            f"color: {SECONDARY_TEXT_COLOR}; background: transparent; font-size: {FONT_SIZE_XS}px;"
         )
         row.addWidget(title_label, 0, Qt.AlignVCenter)
         row.addWidget(control, 1)
