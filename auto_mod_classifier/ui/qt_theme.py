@@ -391,7 +391,7 @@ def apply_card_style(widget: QWidget, variant: str = "panel") -> None:
     elif variant == "hero":
         bg = SURFACE_ELEVATED
         border = BORDER_STRONG
-        shadow = True
+        shadow = False
         radius = RADIUS_LG
     elif variant == "subtle":
         bg = "transparent"
@@ -411,7 +411,7 @@ def apply_card_style(widget: QWidget, variant: str = "panel") -> None:
     else:
         bg = SURFACE_CARD
         border = BORDER_DEFAULT
-        shadow = True
+        shadow = False
         radius = RADIUS_LG
 
     object_name = f"{variant}Card"
