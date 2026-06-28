@@ -82,14 +82,14 @@ class ScrollablePage(ScrollArea):
         self.content = content
 
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(28, 24, 28, 28)
-        layout.setSpacing(16)
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(12)
         self.container_layout = layout
 
         header = QWidget(content)
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(6)
+        header_layout.setSpacing(4)
 
         title_label = TitleLabel(title, header)
         subtitle_label = BodyLabel(subtitle, header)
@@ -116,8 +116,8 @@ class TaskPage(QWidget):
         self.setStyleSheet(f"background-color: {BG_COLOR};")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 24)
-        layout.setSpacing(14)
+        layout.setContentsMargins(16, 10, 16, 14)
+        layout.setSpacing(8)
         self.container_layout = layout
 
         header = QWidget(self)
@@ -125,13 +125,9 @@ class TaskPage(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(4)
 
-        title_label = TitleLabel(title, header)
-        subtitle_label = BodyLabel(subtitle, header)
-        subtitle_label.setWordWrap(True)
+        title_label = StrongBodyLabel(title, header)
         title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
-        subtitle_label.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent;")
         header_layout.addWidget(title_label)
-        header_layout.addWidget(subtitle_label)
         layout.addWidget(header, 0)
 
     def scroll_to_top(self) -> None:
@@ -147,8 +143,8 @@ class MetricCard(QFrame):
         apply_card_style(self, "metric")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(8)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(4)
 
         caption = BodyLabel(title, self)
         caption.setWordWrap(True)
@@ -166,7 +162,7 @@ class MetricCard(QFrame):
 
         layout.addStretch(1)
 
-        self.setMinimumHeight(92)
+        self.setMinimumHeight(68)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     def set_value(self, value: str) -> None:
@@ -196,8 +192,8 @@ class StageBoard(QFrame):
         self.current_stage_key: Optional[str] = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
 
         title_label = StrongBodyLabel(title, self)
         title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
@@ -206,18 +202,18 @@ class StageBoard(QFrame):
         track = QWidget(self)
         track_layout = QHBoxLayout(track)
         track_layout.setContentsMargins(0, 0, 0, 0)
-        track_layout.setSpacing(8)
+        track_layout.setSpacing(6)
         layout.addWidget(track)
 
         for index, (stage_key, stage_title) in enumerate(stages, start=1):
             row = QFrame(track)
             row_layout = QVBoxLayout(row)
-            row_layout.setContentsMargins(8, 8, 8, 8)
-            row_layout.setSpacing(5)
+            row_layout.setContentsMargins(6, 5, 6, 5)
+            row_layout.setSpacing(3)
 
             dot_label = QLabel(str(index), row)
             dot_label.setAlignment(Qt.AlignCenter)
-            dot_label.setFixedSize(24, 24)
+            dot_label.setFixedSize(20, 20)
             row_layout.addWidget(dot_label, 0, Qt.AlignHCenter)
 
             title_widget = QLabel(stage_title, row)
@@ -240,6 +236,7 @@ class StageBoard(QFrame):
         self.detail_label.setWordWrap(True)
         self.detail_label.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent;")
         layout.addWidget(self.detail_label)
+        self.detail_label.hide()
         self.reset()
 
     def reset(self) -> None:
@@ -336,7 +333,7 @@ class StageBoard(QFrame):
             color: {dot_color};
             background: transparent;
             border: 1px solid {dot_color};
-            border-radius: 12px;
+            border-radius: 10px;
             font-size: 12px;
             font-weight: 700;
             """
@@ -364,17 +361,17 @@ class ActionCard(QFrame):
         apply_card_style(self, "hero" if primary else "panel")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
 
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
-        header_row.setSpacing(10)
+        header_row.setSpacing(8)
         if icon is not None:
             from qfluentwidgets import IconWidget
 
             icon_widget = IconWidget(icon, self)
-            icon_widget.setFixedSize(22, 22)
+            icon_widget.setFixedSize(20, 20)
             header_row.addWidget(icon_widget, 0, Qt.AlignTop)
 
         title_label = StrongBodyLabel(title, self)
@@ -425,7 +422,7 @@ def build_result_table(parent: QWidget) -> TableWidget:
     table.setSelectionBehavior(TableWidget.SelectRows)
     table.setAlternatingRowColors(True)
     table.setWordWrap(False)
-    table.setMinimumHeight(320)
+    table.setMinimumHeight(160)
     table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
     table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
     table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)

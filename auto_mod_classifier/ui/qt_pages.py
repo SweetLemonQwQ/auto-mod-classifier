@@ -83,8 +83,8 @@ class QtPageFactory:
         apply_card_style(card, variant)
 
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
 
         title_label = StrongBodyLabel(title, card)
         title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
@@ -135,19 +135,19 @@ class QtPageFactory:
         workspace = QWidget(page)
         workspace_layout = QHBoxLayout(workspace)
         workspace_layout.setContentsMargins(0, 0, 0, 0)
-        workspace_layout.setSpacing(16)
+        workspace_layout.setSpacing(12)
 
         left_column = QWidget(workspace)
-        left_column.setFixedWidth(378)
+        left_column.setFixedWidth(340)
         left_layout = QVBoxLayout(left_column)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(12)
+        left_layout.setSpacing(10)
 
         right_column = QWidget(workspace)
         right_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         right_layout = QVBoxLayout(right_column)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(12)
+        right_layout.setSpacing(10)
 
         workspace_layout.addWidget(left_column, 0)
         workspace_layout.addWidget(right_column, 1)
@@ -182,7 +182,7 @@ class QtPageFactory:
         layout.addWidget(progress_bar)
 
         info_row = QHBoxLayout()
-        info_row.setSpacing(10)
+        info_row.setSpacing(8)
         download_label = BodyLabel(build_idle_download_status_text(), card)
         download_label.setWordWrap(True)
         apply_label_tone(download_label, muted=True)
@@ -250,7 +250,7 @@ class QtPageFactory:
         result_layout.addWidget(hint_label)
 
         result_table = build_result_table(result_page)
-        result_table.setMinimumHeight(180)
+        result_table.setMinimumHeight(140)
         result_layout.addWidget(result_table, 1)
 
         return result_page, summary_edit, log_edit, result_table, hint_label
@@ -265,7 +265,7 @@ class QtPageFactory:
 
         quick_card, quick_layout = self._create_card("开始工作", variant="hero")
         action_row = QHBoxLayout()
-        action_row.setSpacing(12)
+        action_row.setSpacing(10)
 
         mod_action = ActionCard("模组筛选", "整理客户端模组，分出服务端保留、纯客户端和待确认。", "开始筛选", quick_card, icon=FIF.ZIP_FOLDER, primary=True)
         mod_action.button.clicked.connect(lambda: self.app.open_page(self.app.mod_page))
@@ -287,8 +287,8 @@ class QtPageFactory:
         status_grid = QWidget(page)
         status_layout = QGridLayout(status_grid)
         status_layout.setContentsMargins(0, 0, 0, 0)
-        status_layout.setHorizontalSpacing(14)
-        status_layout.setVerticalSpacing(14)
+        status_layout.setHorizontalSpacing(12)
+        status_layout.setVerticalSpacing(12)
         status_layout.setColumnStretch(0, 1)
         status_layout.setColumnStretch(1, 1)
 
@@ -422,7 +422,7 @@ class QtPageFactory:
         right_layout.addWidget(mod_stage_board, 0)
 
         metric_row = QHBoxLayout()
-        metric_row.setSpacing(10)
+        metric_row.setSpacing(8)
         mod_keep_card = MetricCard("服务端保留", "--", "可留在服务端")
         mod_client_card = MetricCard("纯客户端", "--", "可从服务端移出")
         mod_unknown_card = MetricCard("待确认", "--", "建议人工查看")
@@ -433,7 +433,7 @@ class QtPageFactory:
 
         preview_card, preview_layout = self._create_card("结果与日志")
         preview_card.setParent(right_column)
-        preview_card.setMinimumHeight(250)
+        preview_card.setMinimumHeight(180)
         result_page, mod_summary_edit, mod_log_edit, mod_result_table, mod_result_hint_label = self._build_log_pages(
             preview_card,
             with_result_table=True,
@@ -555,7 +555,7 @@ class QtPageFactory:
 
         preview_card, preview_layout = self._create_card("摘要与日志")
         preview_card.setParent(right_column)
-        preview_card.setMinimumHeight(330)
+        preview_card.setMinimumHeight(230)
         _log_page, server_summary_edit, server_log_edit, _table, _hint = self._build_log_pages(
             preview_card,
             with_result_table=False,
@@ -607,8 +607,8 @@ class QtPageFactory:
         grid = QWidget(page)
         grid_layout = QGridLayout(grid)
         grid_layout.setContentsMargins(0, 0, 0, 0)
-        grid_layout.setHorizontalSpacing(14)
-        grid_layout.setVerticalSpacing(14)
+        grid_layout.setHorizontalSpacing(12)
+        grid_layout.setVerticalSpacing(12)
         grid_layout.setColumnStretch(0, 1)
         grid_layout.setColumnStretch(1, 1)
 
@@ -617,7 +617,7 @@ class QtPageFactory:
         mod_time = BodyLabel("最近时间：暂无", mod_card)
         mod_summary = PlainTextEdit(mod_card)
         mod_summary.setReadOnly(True)
-        mod_summary.setMinimumHeight(220)
+        mod_summary.setMinimumHeight(180)
         mod_summary.setPlainText("完成一次模组筛选后，这里会显示结果摘要。")
         apply_read_only_editor_style(mod_summary)
         mod_status.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
@@ -645,7 +645,7 @@ class QtPageFactory:
         server_time = BodyLabel("最近时间：暂无", server_card)
         server_summary = PlainTextEdit(server_card)
         server_summary.setReadOnly(True)
-        server_summary.setMinimumHeight(220)
+        server_summary.setMinimumHeight(180)
         server_summary.setPlainText("完成一次服务端制作后，这里会显示服务端目录、日志目录和启动脚本位置。")
         apply_read_only_editor_style(server_summary)
         server_status.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
@@ -704,8 +704,8 @@ class QtPageFactory:
         grid = QWidget(page)
         grid_layout = QGridLayout(grid)
         grid_layout.setContentsMargins(0, 0, 0, 0)
-        grid_layout.setHorizontalSpacing(14)
-        grid_layout.setVerticalSpacing(14)
+        grid_layout.setHorizontalSpacing(12)
+        grid_layout.setVerticalSpacing(12)
         grid_layout.setColumnStretch(0, 1)
         grid_layout.setColumnStretch(1, 1)
 

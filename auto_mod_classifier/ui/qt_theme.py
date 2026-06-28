@@ -48,14 +48,14 @@ def build_window_stylesheet() -> str:
         height: 16px;
     }}
     QPushButton {{
-        min-height: 34px;
+        min-height: 32px;
     }}
     QHeaderView::section {{
         background-color: {SURFACE_ALT_COLOR};
         color: {TEXT_COLOR};
         border: 0;
         border-bottom: 1px solid {BORDER_COLOR};
-        padding: 8px 10px;
+        padding: 6px 8px;
     }}
     QTableCornerButton::section {{
         background-color: {SURFACE_ALT_COLOR};
@@ -64,7 +64,7 @@ def build_window_stylesheet() -> str:
         border-bottom: 1px solid {BORDER_COLOR};
     }}
     QProgressBar {{
-        min-height: 14px;
+        min-height: 12px;
         background-color: {SURFACE_ALT_COLOR};
         color: {TEXT_COLOR};
         border: 1px solid {BORDER_COLOR};
@@ -140,7 +140,7 @@ def apply_input_style(widget: QWidget) -> None:
         border: 1px solid {BORDER_COLOR};
         border-radius: 8px;
         padding: 0 12px;
-        min-height: 34px;
+        min-height: 32px;
         """
     )
 

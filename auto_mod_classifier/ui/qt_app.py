@@ -80,13 +80,23 @@ class App(FluentWindow):
 
     def _build_window(self) -> None:
         self.setWindowTitle(APP_TITLE)
-        self.resize(1380, 920)
-        self.setMinimumSize(1180, 760)
+        self.setMinimumSize(1040, 680)
+        self._resize_to_available_screen()
         self.setAcceptDrops(True)
         self.setMicaEffectEnabled(False)
         if APP_ICON_PATH.exists():
             self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         self.setStyleSheet(build_window_stylesheet())
+
+    def _resize_to_available_screen(self) -> None:
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            self.resize(1180, 760)
+            return
+        available = screen.availableGeometry()
+        width = min(1280, max(1040, int(available.width() * 0.9)))
+        height = min(820, max(680, int(available.height() * 0.9)))
+        self.resize(width, height)
 
     def _build_pages(self) -> None:
         page_factory = QtPageFactory(self)
