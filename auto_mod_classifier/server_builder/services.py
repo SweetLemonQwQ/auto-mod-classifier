@@ -990,6 +990,7 @@ class ServerLaunchService:
                 text=True,
                 encoding=SYSTEM_ENCODING,
                 errors="replace",
+                creationflags=SUBPROCESS_CREATIONFLAGS,
             )
 
             line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
