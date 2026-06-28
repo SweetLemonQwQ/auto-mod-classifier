@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, Optional, TYPE_CHECKING
+
+from qfluentwidgets import (
+    BodyLabel,
+    CheckBox,
+    ComboBox,
+    LineEdit,
+    PlainTextEdit,
+    PrimaryPushButton,
+    ProgressBar,
+    PushButton,
+    StrongBodyLabel,
+    TableWidget,
+)
+
+if TYPE_CHECKING:
+    from .qt_widgets import MetricCard, StageBoard
+
+
+@dataclass
+class HomeWidgets:
+    mod_status_label: StrongBodyLabel
+    mod_output_label: BodyLabel
+    server_status_label: StrongBodyLabel
+    server_output_label: BodyLabel
+
+
+@dataclass
+class ReportSectionState:
+    status_label: StrongBodyLabel
+    summary_edit: PlainTextEdit
+    result_button: PushButton
+    extra_button: Optional[PushButton]
+    result_dir: Optional[Path] = None
+    extra_dir: Optional[Path] = None
+
+
+@dataclass
+class TaskPanelState:
+    stage_label: StrongBodyLabel
+    status_label: BodyLabel
+    progress_bar: ProgressBar
+    download_label: BodyLabel
+    output_label: BodyLabel
+    summary_edit: PlainTextEdit
+    log_edit: PlainTextEdit
+    start_button: PrimaryPushButton
+    result_button: PushButton
+    extra_button: Optional[PushButton]
+    metric_cards: Dict[str, "MetricCard"] = field(default_factory=dict)
+    stage_board: Optional["StageBoard"] = None
+    result_table: Optional[TableWidget] = None
+    result_hint_label: Optional[BodyLabel] = None
+    result_dir: Optional[Path] = None
+    extra_dir: Optional[Path] = None
+
+
+@dataclass
+class ModInputWidgets:
+    path_edit: LineEdit
+    download_source_combo: ComboBox
+    dry_run_checkbox: CheckBox
+    use_mcmod_checkbox: CheckBox
+    use_cf_checkbox: CheckBox
+    second_pass_checkbox: CheckBox
+
+
+@dataclass
+class ServerInputWidgets:
+    client_path_edit: LineEdit
+    output_path_edit: LineEdit
+    download_source_combo: ComboBox
+    use_mcmod_checkbox: CheckBox
+    use_cf_checkbox: CheckBox
+    second_pass_checkbox: CheckBox
