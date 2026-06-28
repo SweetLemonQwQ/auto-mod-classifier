@@ -8,12 +8,13 @@ import shutil
 import sys
 import tempfile
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QColor, QCloseEvent, QDesktopServices, QDragEnterEvent, QDropEvent, QIcon
-from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
 from qfluentwidgets import (
     ComboBox,
     FluentIcon as FIF,
@@ -44,9 +45,9 @@ from ..shared import (
 from ..tasks import run_mod_task, run_server_task
 from .qt_dialogs import ChecklistDialog, VersionSelectionDialog
 from .qt_pages import QtPageFactory
-from .qt_state import HomeWidgets, ModInputWidgets, ReportSectionState, ServerInputWidgets, TaskPanelState
+from .qt_state import HomeWidgets, ModInputWidgets, ReportSectionState, ServerInputWidgets, SettingsWidgets, TaskPanelState
 from .qt_theme import ACCENT_COLOR, APP_ICON_PATH, build_window_stylesheet
-from .qt_widgets import ScrollablePage, populate_result_row
+from .qt_widgets import populate_result_row
 
 
 class App(FluentWindow):
@@ -64,6 +65,7 @@ class App(FluentWindow):
         self.server_panel: Optional[TaskPanelState] = None
         self.mod_inputs: Optional[ModInputWidgets] = None
         self.server_inputs: Optional[ServerInputWidgets] = None
+        self.settings_widgets: Optional[SettingsWidgets] = None
 
         cleanup_stale_import_workspaces()
 
@@ -93,7 +95,7 @@ class App(FluentWindow):
         mod_build = page_factory.build_mod_page()
         server_build = page_factory.build_server_page()
         report_build = page_factory.build_report_page()
-        settings_page = page_factory.build_settings_page()
+        settings_build = page_factory.build_settings_page()
 
         self.home_page = home_build.page
         self.home_widgets = home_build.widgets
@@ -109,7 +111,8 @@ class App(FluentWindow):
         self.report_page = report_build.page
         self.report_sections = report_build.sections
 
-        self.settings_page = settings_page
+        self.settings_page = settings_build.page
+        self.settings_widgets = settings_build.widgets
 
         self.addSubInterface(self.home_page, FIF.HOME, "工作台")
         self.addSubInterface(self.mod_page, FIF.ZIP_FOLDER, "模组筛选")
@@ -126,9 +129,15 @@ class App(FluentWindow):
         assert self.server_inputs is not None
         return self.server_inputs
 
-    def open_page(self, page: ScrollablePage) -> None:
+    def _require_settings_widgets(self) -> SettingsWidgets:
+        assert self.settings_widgets is not None
+        return self.settings_widgets
+
+    def open_page(self, page: QWidget) -> None:
         self.switchTo(page)
-        page.scroll_to_top()
+        scroll_to_top = getattr(page, "scroll_to_top", None)
+        if callable(scroll_to_top):
+            scroll_to_top()
 
     def choose_mod_folder(self) -> None:
         selected = QFileDialog.getExistingDirectory(self, "选择 mods 目录")
@@ -161,7 +170,8 @@ class App(FluentWindow):
             self._require_server_inputs().client_path_edit.setText(selected)
 
     def choose_output_folder(self) -> None:
-        selected = QFileDialog.getExistingDirectory(self, "选择新的空服务端输出目录")
+        default_dir = self._require_settings_widgets().server_output_path_edit.text().strip()
+        selected = QFileDialog.getExistingDirectory(self, "选择新的空服务端输出目录", default_dir)
         if selected:
             self._require_server_inputs().output_path_edit.setText(selected)
 
@@ -223,14 +233,15 @@ class App(FluentWindow):
         self.mod_panel.status_label.setText("准备开始…")
         self._set_busy_state(True)
         self._refresh_home_overview(panel_key="mod", status="运行中", output=None)
+        settings_widgets = self._require_settings_widgets()
 
         options = ModTaskOptions(
             mods_path=source_path,
-            download_source=self.resolve_download_source(mod_inputs.download_source_combo),
+            download_source=self.resolve_download_source(settings_widgets.filter_download_source_combo),
             dry_run=mod_inputs.dry_run_checkbox.isChecked(),
-            use_mcmod=mod_inputs.use_mcmod_checkbox.isChecked(),
-            use_curseforge=mod_inputs.use_cf_checkbox.isChecked(),
-            enable_second_pass=mod_inputs.second_pass_checkbox.isChecked(),
+            use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
+            use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
+            enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
         )
         self.worker_thread = threading.Thread(
             target=run_mod_task,
@@ -251,6 +262,11 @@ class App(FluentWindow):
         server_inputs = self._require_server_inputs()
         source_text = server_inputs.client_path_edit.text().strip()
         output_text = server_inputs.output_path_edit.text().strip()
+        settings_widgets = self._require_settings_widgets()
+        if not output_text:
+            output_text = settings_widgets.server_output_path_edit.text().strip()
+            if output_text:
+                server_inputs.output_path_edit.setText(output_text)
         if not source_text:
             self.show_warning("请先选择客户端目录或整合包。")
             return
@@ -274,10 +290,10 @@ class App(FluentWindow):
         options = ServerTaskOptions(
             client_dir=source_path,
             output_dir=Path(output_text),
-            download_source=self.resolve_download_source(server_inputs.download_source_combo),
-            use_mcmod=server_inputs.use_mcmod_checkbox.isChecked(),
-            use_curseforge=server_inputs.use_cf_checkbox.isChecked(),
-            enable_second_pass=server_inputs.second_pass_checkbox.isChecked(),
+            download_source=self.resolve_download_source(settings_widgets.server_download_source_combo),
+            use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
+            use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
+            enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
         )
         self.worker_thread = threading.Thread(
             target=run_server_task,
@@ -457,9 +473,7 @@ class App(FluentWindow):
 
         if panel_key == "mod":
             mod_rules = [
-                ("complete", ["分类完成", "写出报告"]),
-                ("report", ["正在写出报告", "json 报告", "csv 报告"]),
-                ("organize", ["正在整理分类结果目录", "最终结果"]),
+                ("complete", ["分类完成", "写出报告", "正在写出报告", "json 报告", "csv 报告", "正在整理分类结果目录", "最终结果"]),
                 ("second-pass", ["2次筛选", "二次筛选"]),
                 ("classify", ["正在汇总", "联网分类", "->", "开始扫描目录", "共发现"]),
                 ("scan", ["开始扫描目录", "共发现", "扫描目录"]),
@@ -470,12 +484,9 @@ class App(FluentWindow):
             return None
 
         server_rules = [
-            ("complete", [TaskStage.COMPLETE.value, "服务端制作完成"]),
-            ("verify", [TaskStage.VERIFY_BOOT.value, "第二次启动验证"]),
-            ("patch", [TaskStage.PATCH_CONFIG.value, "写入 eula", "server.properties"]),
-            ("first-boot", [TaskStage.FIRST_BOOT.value, "首次启动"]),
-            ("copy-configs", [TaskStage.COPY_CONFIGS.value, "复制配置目录", "收集配置目录候选"]),
-            ("copy-mods", [TaskStage.COPY_MODS.value, "复制服务端模组"]),
+            ("verify", [TaskStage.COMPLETE.value, "服务端制作完成", TaskStage.VERIFY_BOOT.value, "第二次启动验证"]),
+            ("verify", [TaskStage.PATCH_CONFIG.value, "写入 eula", "server.properties", TaskStage.FIRST_BOOT.value, "首次启动"]),
+            ("classify", [TaskStage.COPY_CONFIGS.value, "复制配置目录", "收集配置目录候选", TaskStage.COPY_MODS.value, "复制服务端模组"]),
             ("classify", [TaskStage.CLASSIFY_MODS.value, "分析客户端 mods", "mod复制核查"]),
             ("install", [TaskStage.INSTALL_SERVER.value, "安装服务端"]),
             ("installer", [TaskStage.DOWNLOAD_INSTALLER.value, "解析官方安装器地址", "下载安装器"]),
@@ -493,6 +504,8 @@ class App(FluentWindow):
             return
         stage_key = self._detect_stage_key(panel_key, message)
         if stage_key is None:
+            return
+        if stage_key not in panel.stage_board.stage_rows:
             return
         panel.stage_board.activate(stage_key, str(message))
         stage_title = panel.stage_board.stage_rows[stage_key]["title"].text()
@@ -560,6 +573,7 @@ class App(FluentWindow):
         if section is None:
             return
         section.status_label.setText(status)
+        section.time_label.setText(f"最近时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         section.summary_edit.setPlainText(summary or status)
         section.result_dir = result_dir
         section.extra_dir = extra_dir
@@ -578,14 +592,16 @@ class App(FluentWindow):
 
         if panel_key == "mod":
             if status:
-                self.home_widgets.mod_status_label.setText(f"模组筛选：{status}")
+                self.home_widgets.mod_status_label.setText(status)
+                self.home_widgets.mod_time_label.setText(f"最近时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             if output:
-                self.home_widgets.mod_output_label.setText(f"最近输出：{output}")
+                self.home_widgets.mod_output_label.setText(f"输出位置：{output}")
         elif panel_key == "server":
             if status:
-                self.home_widgets.server_status_label.setText(f"一键开服：{status}")
+                self.home_widgets.server_status_label.setText(status)
+                self.home_widgets.server_time_label.setText(f"最近时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             if output:
-                self.home_widgets.server_output_label.setText(f"最近输出：{output}")
+                self.home_widgets.server_output_label.setText(f"输出位置：{output}")
 
     def _refresh_report_sections(self) -> None:
         for section in self.report_sections.values():

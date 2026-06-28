@@ -19,6 +19,9 @@ TEXT_COLOR = "#F8FAFC"
 MUTED_TEXT_COLOR = "#94A3B8"
 ACCENT_COLOR = "#22C55E"
 ACCENT_SOFT_COLOR = "#163123"
+IDLE_COLOR = "#64748B"
+RUNNING_COLOR = "#38BDF8"
+SUCCESS_COLOR = "#22C55E"
 WARNING_COLOR = "#F59E0B"
 ERROR_COLOR = "#EF4444"
 
@@ -41,8 +44,11 @@ def build_window_stylesheet() -> str:
         spacing: 8px;
     }}
     QCheckBox::indicator {{
-        width: 18px;
-        height: 18px;
+        width: 16px;
+        height: 16px;
+    }}
+    QPushButton {{
+        min-height: 34px;
     }}
     QHeaderView::section {{
         background-color: {SURFACE_ALT_COLOR};
@@ -58,27 +64,27 @@ def build_window_stylesheet() -> str:
         border-bottom: 1px solid {BORDER_COLOR};
     }}
     QProgressBar {{
-        min-height: 18px;
+        min-height: 14px;
         background-color: {SURFACE_ALT_COLOR};
         color: {TEXT_COLOR};
         border: 1px solid {BORDER_COLOR};
-        border-radius: 8px;
+        border-radius: 7px;
         text-align: center;
     }}
     QProgressBar::chunk {{
         background-color: {ACCENT_COLOR};
-        border-radius: 7px;
+        border-radius: 6px;
     }}
     """
 
 
-def install_shadow(widget: QWidget, *, blur_radius: int = 28, y_offset: int = 10) -> None:
+def install_shadow(widget: QWidget, *, blur_radius: int = 18, y_offset: int = 7) -> None:
     """给卡片一层轻阴影，提升一点桌面工具的质感。"""
 
     effect = QGraphicsDropShadowEffect(widget)
     effect.setBlurRadius(blur_radius)
     effect.setOffset(0, y_offset)
-    effect.setColor(QColor(3, 7, 18, 125))
+    effect.setColor(QColor(3, 7, 18, 90))
     widget.setGraphicsEffect(effect)
 
 
@@ -89,6 +95,9 @@ def apply_card_style(widget: QWidget, variant: str = "panel") -> None:
     elif variant == "hero":
         background = SURFACE_HERO_COLOR
         border = "#3B5169"
+    elif variant == "soft":
+        background = ACCENT_SOFT_COLOR
+        border = "#256D3D"
     else:
         background = SURFACE_COLOR
         border = BORDER_COLOR
@@ -118,6 +127,7 @@ def apply_read_only_editor_style(editor: PlainTextEdit, *, console: bool = False
         border-radius: 8px;
         selection-background-color: {ACCENT_COLOR};
         font-family: {font_family};
+        font-size: 12px;
         """
     )
 
@@ -130,7 +140,7 @@ def apply_input_style(widget: QWidget) -> None:
         border: 1px solid {BORDER_COLOR};
         border-radius: 8px;
         padding: 0 12px;
-        min-height: 36px;
+        min-height: 34px;
         """
     )
 

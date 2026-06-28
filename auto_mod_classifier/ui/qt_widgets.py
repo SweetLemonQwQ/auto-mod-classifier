@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QScrollBar,
+    QSizePolicy,
     QStackedWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -26,14 +27,15 @@ from qfluentwidgets import (
 )
 
 from .qt_theme import (
-    ACCENT_COLOR,
     ACCENT_SOFT_COLOR,
     BG_COLOR,
     BORDER_COLOR,
     ERROR_COLOR,
+    IDLE_COLOR,
     MUTED_TEXT_COLOR,
+    RUNNING_COLOR,
+    SUCCESS_COLOR,
     SURFACE_ALT_COLOR,
-    SURFACE_COLOR,
     TEXT_COLOR,
     apply_card_style,
     install_shadow,
@@ -104,6 +106,38 @@ class ScrollablePage(ScrollArea):
             scrollbar.setValue(0)
 
 
+class TaskPage(QWidget):
+    """固定首屏页面壳子，功能页不做整页纵向滚动。"""
+
+    def __init__(self, page_key: str, title: str, subtitle: str, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.page_key = page_key
+        self.setObjectName(page_key)
+        self.setStyleSheet(f"background-color: {BG_COLOR};")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 24)
+        layout.setSpacing(14)
+        self.container_layout = layout
+
+        header = QWidget(self)
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(4)
+
+        title_label = TitleLabel(title, header)
+        subtitle_label = BodyLabel(subtitle, header)
+        subtitle_label.setWordWrap(True)
+        title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
+        subtitle_label.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent;")
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(subtitle_label)
+        layout.addWidget(header, 0)
+
+    def scroll_to_top(self) -> None:
+        pass
+
+
 class MetricCard(QFrame):
     """紧凑数字卡片，只展示一个重点指标。"""
 
@@ -132,6 +166,9 @@ class MetricCard(QFrame):
 
         layout.addStretch(1)
 
+        self.setMinimumHeight(92)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
     def set_value(self, value: str) -> None:
         if self.value_label.text() != value:
             self.value_label.setText(value)
@@ -144,21 +181,13 @@ class MetricCard(QFrame):
 
 
 class StageBoard(QFrame):
-    """阶段时间线，跟随真实状态和日志推进。"""
+    """横向阶段进度，跟随真实状态和日志推进。"""
 
     def __init__(self, title: str, stages: List[tuple[str, str]], parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._animations: List[QPropertyAnimation] = []
         self.setObjectName("stageBoard")
-        self.setStyleSheet(
-            f"""
-            QWidget#stageBoard {{
-                background-color: {SURFACE_COLOR};
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 8px;
-            }}
-            """
-        )
+        apply_card_style(self, "panel")
         install_shadow(self)
 
         self.stage_order = [key for key, _ in stages]
@@ -167,34 +196,37 @@ class StageBoard(QFrame):
         self.current_stage_key: Optional[str] = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(12)
 
         title_label = StrongBodyLabel(title, self)
         title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
         layout.addWidget(title_label)
 
-        for stage_key, stage_title in stages:
-            row = QWidget(self)
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(12, 10, 12, 10)
-            row_layout.setSpacing(10)
+        track = QWidget(self)
+        track_layout = QHBoxLayout(track)
+        track_layout.setContentsMargins(0, 0, 0, 0)
+        track_layout.setSpacing(8)
+        layout.addWidget(track)
 
-            dot_label = QLabel("●", row)
-            dot_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
-            dot_label.setFixedWidth(14)
-            row_layout.addWidget(dot_label, 0, Qt.AlignTop)
+        for index, (stage_key, stage_title) in enumerate(stages, start=1):
+            row = QFrame(track)
+            row_layout = QVBoxLayout(row)
+            row_layout.setContentsMargins(8, 8, 8, 8)
+            row_layout.setSpacing(5)
 
-            text_column = QVBoxLayout()
-            text_column.setContentsMargins(0, 0, 0, 0)
-            text_column.setSpacing(3)
+            dot_label = QLabel(str(index), row)
+            dot_label.setAlignment(Qt.AlignCenter)
+            dot_label.setFixedSize(24, 24)
+            row_layout.addWidget(dot_label, 0, Qt.AlignHCenter)
 
             title_widget = QLabel(stage_title, row)
+            title_widget.setAlignment(Qt.AlignCenter)
+            title_widget.setWordWrap(True)
             detail_widget = QLabel("", row)
-            detail_widget.setWordWrap(True)
-            text_column.addWidget(title_widget)
-            text_column.addWidget(detail_widget)
-            row_layout.addLayout(text_column, 1)
+            detail_widget.hide()
+            row_layout.addWidget(title_widget)
+            row_layout.addWidget(detail_widget)
 
             self.stage_rows[stage_key] = {
                 "container": row,
@@ -202,9 +234,12 @@ class StageBoard(QFrame):
                 "title": title_widget,
                 "detail": detail_widget,
             }
-            layout.addWidget(row)
+            track_layout.addWidget(row, 1)
 
-        layout.addStretch(1)
+        self.detail_label = BodyLabel("等待开始", self)
+        self.detail_label.setWordWrap(True)
+        self.detail_label.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent;")
+        layout.addWidget(self.detail_label)
         self.reset()
 
     def reset(self) -> None:
@@ -214,6 +249,7 @@ class StageBoard(QFrame):
             detail = "等待开始" if index == 0 else ""
             self.stage_details[stage_key] = detail
             self._apply_state(stage_key, "pending", detail)
+        self.detail_label.setText("等待开始")
 
     def activate(self, stage_key: str, detail: str = "") -> None:
         if stage_key not in self.stage_rows:
@@ -228,6 +264,7 @@ class StageBoard(QFrame):
                 self._apply_state(key, "done", self.stage_details.get(key, "已完成"))
             elif index == current_index:
                 self._apply_state(key, "running", self.stage_details.get(key, detail))
+                self.detail_label.setText(self.stage_details.get(key, detail) or "运行中")
             else:
                 self._apply_state(key, "pending", self.stage_details.get(key, ""))
 
@@ -237,6 +274,7 @@ class StageBoard(QFrame):
         final_key = self.stage_order[-1]
         self.stage_details[final_key] = detail
         self._apply_state(final_key, "done", detail)
+        self.detail_label.setText(detail)
         self.current_stage_key = final_key
 
     def fail(self, detail: str) -> None:
@@ -247,6 +285,7 @@ class StageBoard(QFrame):
                 self._apply_state(key, "done", self.stage_details.get(key, "已完成"))
             elif index == current_index:
                 self._apply_state(key, "error", detail)
+                self.detail_label.setText(detail)
             else:
                 self._apply_state(key, "pending", self.stage_details.get(key, ""))
 
@@ -261,17 +300,17 @@ class StageBoard(QFrame):
             return
 
         if state == "running":
-            dot_color = ACCENT_COLOR
+            dot_color = RUNNING_COLOR
             title_color = TEXT_COLOR
             detail_color = TEXT_COLOR
-            row_background = ACCENT_SOFT_COLOR
-            row_border = ACCENT_COLOR
+            row_background = "#102B3A"
+            row_border = RUNNING_COLOR
         elif state == "done":
-            dot_color = ACCENT_COLOR
+            dot_color = SUCCESS_COLOR
             title_color = TEXT_COLOR
             detail_color = MUTED_TEXT_COLOR
-            row_background = SURFACE_ALT_COLOR
-            row_border = BORDER_COLOR
+            row_background = ACCENT_SOFT_COLOR
+            row_border = SUCCESS_COLOR
         elif state == "error":
             dot_color = ERROR_COLOR
             title_color = TEXT_COLOR
@@ -279,11 +318,11 @@ class StageBoard(QFrame):
             row_background = "#30191B"
             row_border = ERROR_COLOR
         else:
-            dot_color = BORDER_COLOR
+            dot_color = IDLE_COLOR
             title_color = MUTED_TEXT_COLOR
             detail_color = MUTED_TEXT_COLOR
-            row_background = "transparent"
-            row_border = "transparent"
+            row_background = SURFACE_ALT_COLOR
+            row_border = BORDER_COLOR
 
         container.setStyleSheet(
             f"""
@@ -292,11 +331,67 @@ class StageBoard(QFrame):
             border-radius: 8px;
             """
         )
-        dot.setStyleSheet(f"color: {dot_color}; background: transparent; font-size: 14px;")
-        title.setStyleSheet(f"color: {title_color}; background: transparent; font-size: 13px; font-weight: 600;")
+        dot.setStyleSheet(
+            f"""
+            color: {dot_color};
+            background: transparent;
+            border: 1px solid {dot_color};
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+            """
+        )
+        title.setStyleSheet(f"color: {title_color}; background: transparent; font-size: 12px; font-weight: 600;")
         detail_label.setStyleSheet(f"color: {detail_color}; background: transparent; font-size: 12px;")
         detail_label.setText(detail)
         _start_opacity_flash(container, self, self._animations, start=0.7)
+
+
+class ActionCard(QFrame):
+    """首页大按钮卡片，用按钮承担明确点击目标。"""
+
+    def __init__(
+        self,
+        title: str,
+        description: str,
+        button_text: str,
+        parent: Optional[QWidget] = None,
+        *,
+        icon=None,
+        primary: bool = False,
+    ):
+        super().__init__(parent)
+        apply_card_style(self, "hero" if primary else "panel")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(10)
+        if icon is not None:
+            from qfluentwidgets import IconWidget
+
+            icon_widget = IconWidget(icon, self)
+            icon_widget.setFixedSize(22, 22)
+            header_row.addWidget(icon_widget, 0, Qt.AlignTop)
+
+        title_label = StrongBodyLabel(title, self)
+        title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
+        header_row.addWidget(title_label, 1)
+        layout.addLayout(header_row)
+
+        desc_label = BodyLabel(description, self)
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet(f"color: {MUTED_TEXT_COLOR}; background: transparent;")
+        layout.addWidget(desc_label)
+        layout.addStretch(1)
+
+        from qfluentwidgets import PrimaryPushButton, PushButton
+
+        self.button = PrimaryPushButton(button_text, self) if primary else PushButton(button_text, self)
+        layout.addWidget(self.button)
 
 
 def build_tab_host(parent: QWidget, tabs: List[tuple[str, str, QWidget]]) -> tuple[QWidget, SegmentedWidget, QStackedWidget]:

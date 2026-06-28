@@ -24,14 +24,17 @@ if TYPE_CHECKING:
 @dataclass
 class HomeWidgets:
     mod_status_label: StrongBodyLabel
+    mod_time_label: BodyLabel
     mod_output_label: BodyLabel
     server_status_label: StrongBodyLabel
+    server_time_label: BodyLabel
     server_output_label: BodyLabel
 
 
 @dataclass
 class ReportSectionState:
     status_label: StrongBodyLabel
+    time_label: BodyLabel
     summary_edit: PlainTextEdit
     result_button: PushButton
     extra_button: Optional[PushButton]
@@ -62,18 +65,28 @@ class TaskPanelState:
 @dataclass
 class ModInputWidgets:
     path_edit: LineEdit
-    download_source_combo: ComboBox
     dry_run_checkbox: CheckBox
-    use_mcmod_checkbox: CheckBox
-    use_cf_checkbox: CheckBox
-    second_pass_checkbox: CheckBox
 
 
 @dataclass
 class ServerInputWidgets:
     client_path_edit: LineEdit
     output_path_edit: LineEdit
-    download_source_combo: ComboBox
-    use_mcmod_checkbox: CheckBox
-    use_cf_checkbox: CheckBox
-    second_pass_checkbox: CheckBox
+
+
+@dataclass
+class SettingsWidgets:
+    filter_download_source_combo: ComboBox
+    filter_use_mcmod_checkbox: CheckBox
+    filter_use_cf_checkbox: CheckBox
+    filter_second_pass_checkbox: CheckBox
+    filter_manual_review_checkbox: CheckBox
+    server_output_path_edit: LineEdit
+    server_download_source_combo: ComboBox
+    java_rule_combo: ComboBox
+    cache_path_edit: LineEdit
+    cache_auto_cleanup_checkbox: CheckBox
+    theme_combo: ComboBox
+    scale_combo: ComboBox
+    detail_log_checkbox: CheckBox
+    animation_checkbox: CheckBox

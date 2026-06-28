@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict
 
 import qfluentwidgets
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
     CheckBox,
     ComboBox,
+    FluentIcon as FIF,
     LineEdit,
     PlainTextEdit,
     PrimaryPushButton,
@@ -20,16 +21,23 @@ from qfluentwidgets import (
 )
 
 from ..download_support import build_idle_download_status_text
-from ..shared import DOWNLOAD_SOURCE_OPTIONS
+from ..shared import DOWNLOAD_SOURCE_OPTIONS, DOWNLOAD_SOURCE_SMART
 from .qt_state import (
     HomeWidgets,
     ModInputWidgets,
     ReportSectionState,
     ServerInputWidgets,
+    SettingsWidgets,
     TaskPanelState,
 )
-from .qt_theme import TEXT_COLOR, apply_card_style, apply_input_style, apply_label_tone, apply_read_only_editor_style
-from .qt_widgets import MetricCard, ScrollablePage, StageBoard, build_result_table, build_tab_host
+from .qt_theme import (
+    TEXT_COLOR,
+    apply_card_style,
+    apply_input_style,
+    apply_label_tone,
+    apply_read_only_editor_style,
+)
+from .qt_widgets import ActionCard, MetricCard, ScrollablePage, StageBoard, TaskPage, build_result_table, build_tab_host
 
 
 @dataclass
@@ -40,14 +48,14 @@ class HomePageBuild:
 
 @dataclass
 class ModPageBuild:
-    page: ScrollablePage
+    page: TaskPage
     panel: TaskPanelState
     inputs: ModInputWidgets
 
 
 @dataclass
 class ServerPageBuild:
-    page: ScrollablePage
+    page: TaskPage
     panel: TaskPanelState
     inputs: ServerInputWidgets
 
@@ -56,6 +64,12 @@ class ServerPageBuild:
 class ReportPageBuild:
     page: ScrollablePage
     sections: Dict[str, ReportSectionState]
+
+
+@dataclass
+class SettingsPageBuild:
+    page: ScrollablePage
+    widgets: SettingsWidgets
 
 
 class QtPageFactory:
@@ -69,8 +83,8 @@ class QtPageFactory:
         apply_card_style(card, variant)
 
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(14)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
 
         title_label = StrongBodyLabel(title, card)
         title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
@@ -84,328 +98,348 @@ class QtPageFactory:
 
         return card, layout
 
-    def _build_download_source_combo(self) -> ComboBox:
+    def _build_download_source_combo(self, current: str = DOWNLOAD_SOURCE_SMART) -> ComboBox:
         combo = ComboBox(self.app)
         for code, label in DOWNLOAD_SOURCE_OPTIONS:
             combo.addItem(label, userData=code)
-            if code == "smart":
+            if code == current:
                 combo.setCurrentIndex(combo.count() - 1)
+        apply_input_style(combo)
         return combo
+
+    def _add_control_row(self, layout: QVBoxLayout, title: str, control: QWidget, hint: str = "") -> None:
+        title_label = BodyLabel(title, self.app)
+        title_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent; font-weight: 600;")
+        layout.addWidget(title_label)
+        layout.addWidget(control)
+        if hint:
+            hint_label = BodyLabel(hint, self.app)
+            hint_label.setWordWrap(True)
+            apply_label_tone(hint_label, muted=True)
+            layout.addWidget(hint_label)
+
+    def _build_path_buttons(self, parent: QWidget, left_text: str, left_slot, right_text: str = "", right_slot=None) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        left_button = PushButton(left_text, parent)
+        left_button.clicked.connect(left_slot)
+        row.addWidget(left_button)
+        if right_text and right_slot:
+            right_button = PushButton(right_text, parent)
+            right_button.clicked.connect(right_slot)
+            row.addWidget(right_button)
+        row.addStretch(1)
+        return row
+
+    def _build_task_workspace(self, page: TaskPage) -> tuple[QWidget, QVBoxLayout, QWidget, QVBoxLayout]:
+        workspace = QWidget(page)
+        workspace_layout = QHBoxLayout(workspace)
+        workspace_layout.setContentsMargins(0, 0, 0, 0)
+        workspace_layout.setSpacing(16)
+
+        left_column = QWidget(workspace)
+        left_column.setFixedWidth(378)
+        left_layout = QVBoxLayout(left_column)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(12)
+
+        right_column = QWidget(workspace)
+        right_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        right_layout = QVBoxLayout(right_column)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(12)
+
+        workspace_layout.addWidget(left_column, 0)
+        workspace_layout.addWidget(right_column, 1)
+        page.container_layout.addWidget(workspace, 1)
+        return left_column, left_layout, right_column, right_layout
+
+    def _build_status_card(
+        self,
+        title: str,
+        ready_text: str,
+        result_button_text: str,
+        result_slot,
+        report_slot,
+        *,
+        parent: QWidget,
+    ) -> tuple[QFrame, StrongBodyLabel, BodyLabel, ProgressBar, BodyLabel, BodyLabel, PushButton, PushButton]:
+        card, layout = self._create_card(title)
+        card.setParent(parent)
+
+        stage_label = StrongBodyLabel("当前阶段：等待开始", card)
+        stage_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
+        layout.addWidget(stage_label)
+
+        status_label = BodyLabel(ready_text, card)
+        status_label.setWordWrap(True)
+        apply_label_tone(status_label, muted=True)
+        layout.addWidget(status_label)
+
+        progress_bar = ProgressBar(card)
+        progress_bar.setRange(0, 100)
+        progress_bar.setValue(0)
+        layout.addWidget(progress_bar)
+
+        info_row = QHBoxLayout()
+        info_row.setSpacing(10)
+        download_label = BodyLabel(build_idle_download_status_text(), card)
+        download_label.setWordWrap(True)
+        apply_label_tone(download_label, muted=True)
+        info_row.addWidget(download_label, 1)
+
+        output_label = BodyLabel("输出位置：尚未运行", card)
+        output_label.setWordWrap(True)
+        output_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        apply_label_tone(output_label, muted=True)
+        info_row.addWidget(output_label, 1)
+        layout.addLayout(info_row)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        result_button = PushButton(result_button_text, card)
+        result_button.setEnabled(False)
+        result_button.clicked.connect(result_slot)
+        action_row.addWidget(result_button)
+
+        report_button = PushButton("查看报告", card)
+        report_button.clicked.connect(report_slot)
+        action_row.addWidget(report_button)
+        action_row.addStretch(1)
+        layout.addLayout(action_row)
+
+        return card, stage_label, status_label, progress_bar, download_label, output_label, result_button, report_button
+
+    def _build_log_pages(
+        self,
+        parent: QWidget,
+        *,
+        with_result_table: bool,
+    ) -> tuple[QWidget, PlainTextEdit, PlainTextEdit, QWidget | None, BodyLabel | None]:
+        summary_page = QWidget(parent)
+        summary_layout = QVBoxLayout(summary_page)
+        summary_layout.setContentsMargins(0, 0, 0, 0)
+        summary_edit = PlainTextEdit(summary_page)
+        summary_edit.setReadOnly(True)
+        summary_edit.setMaximumBlockCount(500)
+        summary_edit.setPlainText("任务完成后，这里会显示摘要。")
+        apply_read_only_editor_style(summary_edit)
+        summary_layout.addWidget(summary_edit)
+
+        log_page = QWidget(parent)
+        log_layout = QVBoxLayout(log_page)
+        log_layout.setContentsMargins(0, 0, 0, 0)
+        log_edit = PlainTextEdit(log_page)
+        log_edit.setReadOnly(True)
+        log_edit.setMaximumBlockCount(1200)
+        log_edit.setPlainText("实时日志会显示在这里。")
+        apply_read_only_editor_style(log_edit, console=True)
+        log_layout.addWidget(log_edit)
+
+        if not with_result_table:
+            return log_page, summary_edit, log_edit, None, None
+
+        result_page = QWidget(parent)
+        result_layout = QVBoxLayout(result_page)
+        result_layout.setContentsMargins(0, 0, 0, 0)
+        result_layout.setSpacing(8)
+
+        hint_label = BodyLabel("还没有筛选结果。任务完成后会优先显示待确认条目。", result_page)
+        hint_label.setWordWrap(True)
+        apply_label_tone(hint_label, muted=True)
+        result_layout.addWidget(hint_label)
+
+        result_table = build_result_table(result_page)
+        result_table.setMinimumHeight(180)
+        result_layout.addWidget(result_table, 1)
+
+        return result_page, summary_edit, log_edit, result_table, hint_label
 
     def build_home_page(self) -> HomePageBuild:
         page = ScrollablePage(
             "homePage",
             "工作台",
-            "这里不是欢迎页，而是入口工作台。你直接从这里进入筛模组、做服务端，或者回看最近结果。",
+            "快速启动模组筛选、制作服务端，查看最近任务结果。",
             self.app,
         )
-        dashboard = QWidget(page)
-        dashboard_layout = QGridLayout(dashboard)
-        dashboard_layout.setContentsMargins(0, 0, 0, 0)
-        dashboard_layout.setHorizontalSpacing(16)
-        dashboard_layout.setVerticalSpacing(16)
-        dashboard_layout.setColumnStretch(0, 3)
-        dashboard_layout.setColumnStretch(1, 2)
 
-        quick_card, quick_layout = self._create_card(
-            "开始工作",
-            "支持目录、客户端、mrpack、CurseForge 风格 zip 直接导入，也支持把文件夹或整合包拖进窗口。",
-            variant="hero",
-        )
-        quick_button_row = QHBoxLayout()
-        quick_button_row.setSpacing(12)
+        quick_card, quick_layout = self._create_card("开始工作", variant="hero")
+        action_row = QHBoxLayout()
+        action_row.setSpacing(12)
 
-        mod_button = PrimaryPushButton("进入模组筛选", quick_card)
-        mod_button.clicked.connect(lambda: self.app.open_page(self.app.mod_page))
-        quick_button_row.addWidget(mod_button)
+        mod_action = ActionCard("模组筛选", "整理客户端模组，分出服务端保留、纯客户端和待确认。", "开始筛选", quick_card, icon=FIF.ZIP_FOLDER, primary=True)
+        mod_action.button.clicked.connect(lambda: self.app.open_page(self.app.mod_page))
+        action_row.addWidget(mod_action)
 
-        server_button = PushButton("进入一键开服", quick_card)
-        server_button.clicked.connect(lambda: self.app.open_page(self.app.server_page))
-        quick_button_row.addWidget(server_button)
+        server_action = ActionCard("一键开服", "从客户端或整合包制作服务端，并完成基础启动检查。", "开始制作", quick_card, icon=FIF.COMMAND_PROMPT)
+        server_action.button.clicked.connect(lambda: self.app.open_page(self.app.server_page))
+        action_row.addWidget(server_action)
 
-        report_button = PushButton("查看结果报告", quick_card)
-        report_button.clicked.connect(lambda: self.app.open_page(self.app.report_page))
-        quick_button_row.addWidget(report_button)
-        quick_button_row.addStretch(1)
-        quick_layout.addLayout(quick_button_row)
+        report_action = ActionCard("结果报告", "打开最近结果、日志和输出目录。", "查看结果", quick_card, icon=FIF.DOCUMENT)
+        report_action.button.clicked.connect(lambda: self.app.open_page(self.app.report_page))
+        action_row.addWidget(report_action)
+        quick_layout.addLayout(action_row)
 
-        drag_hint = BodyLabel("拖进来的整合包会自动走导入整理流程，不需要你手动展开。", quick_card)
-        drag_hint.setWordWrap(True)
-        apply_label_tone(drag_hint, muted=True)
-        quick_layout.addWidget(drag_hint)
+        input_hint = BodyLabel("支持文件夹、.mrpack、.zip，直接拖入窗口也可以。", quick_card)
+        apply_label_tone(input_hint, muted=True)
+        quick_layout.addWidget(input_hint)
 
-        status_card, status_layout = self._create_card(
-            "最近状态",
-            "这里同步两条主流程最近一次的状态和输出位置，方便直接决定下一步该去哪一页。",
-        )
-        mod_status_label = StrongBodyLabel("模组筛选：待运行", status_card)
+        status_grid = QWidget(page)
+        status_layout = QGridLayout(status_grid)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setHorizontalSpacing(14)
+        status_layout.setVerticalSpacing(14)
+        status_layout.setColumnStretch(0, 1)
+        status_layout.setColumnStretch(1, 1)
+
+        mod_card, mod_layout = self._create_card("模组筛选", "最近状态和输出位置。")
+        mod_status_label = StrongBodyLabel("待运行", mod_card)
         mod_status_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
-        mod_output_label = BodyLabel("最近输出：尚无结果", status_card)
-        mod_output_label.setWordWrap(True)
-        apply_label_tone(mod_output_label, muted=True)
-        status_layout.addWidget(mod_status_label)
-        status_layout.addWidget(mod_output_label)
+        mod_time_label = BodyLabel("最近时间：暂无", mod_card)
+        mod_output_label = BodyLabel("输出位置：暂无", mod_card)
+        for label in (mod_time_label, mod_output_label):
+            label.setWordWrap(True)
+            apply_label_tone(label, muted=True)
+        mod_layout.addWidget(mod_status_label)
+        mod_layout.addWidget(mod_time_label)
+        mod_layout.addWidget(mod_output_label)
+        mod_button_row = QHBoxLayout()
+        mod_result_button = PushButton("查看结果", mod_card)
+        mod_result_button.clicked.connect(lambda: self.app.open_page(self.app.report_page))
+        mod_button_row.addWidget(mod_result_button)
+        mod_again_button = PushButton("再次运行", mod_card)
+        mod_again_button.clicked.connect(lambda: self.app.open_page(self.app.mod_page))
+        mod_button_row.addWidget(mod_again_button)
+        mod_button_row.addStretch(1)
+        mod_layout.addLayout(mod_button_row)
 
-        status_button_row = QHBoxLayout()
-        status_button_row.setSpacing(10)
-        open_mod_page_button = PushButton("打开模组筛选页", status_card)
-        open_mod_page_button.clicked.connect(lambda: self.app.open_page(self.app.mod_page))
-        status_button_row.addWidget(open_mod_page_button)
-        open_server_page_button = PushButton("打开一键开服页", status_card)
-        open_server_page_button.clicked.connect(lambda: self.app.open_page(self.app.server_page))
-        status_button_row.addWidget(open_server_page_button)
-        status_button_row.addStretch(1)
-        status_layout.addLayout(status_button_row)
-
-        divider = QFrame(status_card)
-        divider.setFixedHeight(1)
-        divider.setStyleSheet("border: 0; background-color: #334155;")
-        status_layout.addWidget(divider)
-
-        server_status_label = StrongBodyLabel("一键开服：待运行", status_card)
+        server_card, server_layout = self._create_card("一键开服", "最近状态和输出位置。")
+        server_status_label = StrongBodyLabel("待运行", server_card)
         server_status_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
-        server_output_label = BodyLabel("最近输出：尚无结果", status_card)
-        server_output_label.setWordWrap(True)
-        apply_label_tone(server_output_label, muted=True)
-        status_layout.addWidget(server_status_label)
-        status_layout.addWidget(server_output_label)
-
-        inputs_card, inputs_layout = self._create_card(
-            "支持输入",
-            "当前项目已经把整合包导入和核心业务拆开了，所以你现在不用先自己整理客户端目录。",
-        )
-        for text in [
-            "目录、zip、mrpack 都可以直接扔进来。",
-            "智能优选会比较 MCIM、BMCLAPI 和官方源。",
-            "模组筛选和一键开服共用同一套任务入口，不重复走两套逻辑。",
-        ]:
-            label = BodyLabel(f"• {text}", inputs_card)
+        server_time_label = BodyLabel("最近时间：暂无", server_card)
+        server_output_label = BodyLabel("输出位置：暂无", server_card)
+        for label in (server_time_label, server_output_label):
             label.setWordWrap(True)
             apply_label_tone(label, muted=True)
-            inputs_layout.addWidget(label)
+        server_layout.addWidget(server_status_label)
+        server_layout.addWidget(server_time_label)
+        server_layout.addWidget(server_output_label)
+        server_button_row = QHBoxLayout()
+        server_result_button = PushButton("查看结果", server_card)
+        server_result_button.clicked.connect(lambda: self.app.open_page(self.app.report_page))
+        server_button_row.addWidget(server_result_button)
+        server_again_button = PushButton("再次运行", server_card)
+        server_again_button.clicked.connect(lambda: self.app.open_page(self.app.server_page))
+        server_button_row.addWidget(server_again_button)
+        server_button_row.addStretch(1)
+        server_layout.addLayout(server_button_row)
 
-        capability_card, capability_layout = self._create_card(
-            "现在这版重点",
-            "页面已经固定成桌面工具工作台，核心信息都在首屏，不再做成长滚动说明页。",
-        )
-        for text in [
-            "筛模组页右侧固定看阶段条、统计卡、结果预览和日志。",
-            "一键开服页右侧固定看版本识别、安装流程和启动验证。",
-            "结果报告页负责集中打开结果目录和日志目录。",
-            "版本选择、人工核查这些阻塞交互已经切到 Qt 弹窗。",
-        ]:
-            label = BodyLabel(f"• {text}", capability_card)
-            label.setWordWrap(True)
-            apply_label_tone(label, muted=True)
-            capability_layout.addWidget(label)
+        status_layout.addWidget(mod_card, 0, 0)
+        status_layout.addWidget(server_card, 0, 1)
 
-        dashboard_layout.addWidget(quick_card, 0, 0)
-        dashboard_layout.addWidget(status_card, 0, 1)
-        dashboard_layout.addWidget(inputs_card, 1, 0)
-        dashboard_layout.addWidget(capability_card, 1, 1)
-
-        page.container_layout.addWidget(dashboard)
+        page.container_layout.addWidget(quick_card)
+        page.container_layout.addWidget(status_grid)
         page.container_layout.addStretch(1)
 
         return HomePageBuild(
             page=page,
             widgets=HomeWidgets(
                 mod_status_label=mod_status_label,
+                mod_time_label=mod_time_label,
                 mod_output_label=mod_output_label,
                 server_status_label=server_status_label,
+                server_time_label=server_time_label,
                 server_output_label=server_output_label,
             ),
         )
 
     def build_mod_page(self) -> ModPageBuild:
-        page = ScrollablePage(
+        page = TaskPage(
             "modPage",
             "模组筛选",
-            "输入目录或整合包后，左侧负责参数和操作，右侧专门盯运行状态、阶段推进、结果预览和日志。",
+            "选择输入源，启动筛选；运行状态、结果和日志固定显示在右侧。",
             self.app,
         )
-        workspace = QSplitter(Qt.Horizontal, page)
-        workspace.setChildrenCollapsible(False)
-        workspace.setHandleWidth(1)
-        workspace.setStyleSheet("QSplitter::handle { background: #0F172A; }")
+        left_column, left_layout, right_column, right_layout = self._build_task_workspace(page)
 
-        left_column = QWidget(workspace)
-        left_column.setMinimumWidth(360)
-        left_column.setMaximumWidth(420)
-        left_layout = QVBoxLayout(left_column)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(16)
-
-        source_card, source_layout = self._create_card("输入源", "支持目录、mrpack、zip，也支持直接拖入窗口。", variant="hero")
+        source_card, source_layout = self._create_card("输入源选择", "选择 mods 目录、客户端目录或整合包。", variant="hero")
+        source_card.setParent(left_column)
         mod_path_edit = LineEdit(source_card)
-        mod_path_edit.setPlaceholderText("选择 mods 目录、客户端目录或整合包")
+        mod_path_edit.setPlaceholderText("选择目录、.mrpack 或 .zip")
         mod_path_edit.setClearButtonEnabled(True)
         apply_input_style(mod_path_edit)
         source_layout.addWidget(mod_path_edit)
+        source_layout.addLayout(self._build_path_buttons(source_card, "浏览目录", self.app.choose_mod_folder, "选择整合包", self.app.choose_mod_archive))
+        drag_hint = BodyLabel("也可以直接把文件夹或整合包拖到窗口里。", source_card)
+        apply_label_tone(drag_hint, muted=True)
+        source_layout.addWidget(drag_hint)
 
-        source_button_row = QHBoxLayout()
-        source_button_row.setSpacing(10)
-        mod_folder_button = PushButton("浏览目录", source_card)
-        mod_folder_button.clicked.connect(self.app.choose_mod_folder)
-        source_button_row.addWidget(mod_folder_button)
+        quick_card, quick_layout = self._create_card("本次任务快速设置")
+        quick_card.setParent(left_column)
+        mod_dry_run_checkbox = CheckBox("仅试运行，不移动文件", quick_card)
+        quick_layout.addWidget(mod_dry_run_checkbox)
+        settings_button = PushButton("全局筛选规则可在设置中修改", quick_card)
+        settings_button.clicked.connect(lambda: self.app.open_page(self.app.settings_page))
+        quick_layout.addWidget(settings_button)
 
-        mod_archive_button = PushButton("选择整合包", source_card)
-        mod_archive_button.clicked.connect(self.app.choose_mod_archive)
-        source_button_row.addWidget(mod_archive_button)
-        source_layout.addLayout(source_button_row)
-
-        options_card, options_layout = self._create_card(
-            "筛选策略",
-            "默认先走本地元数据判断，不够再补查远程来源。智能优选会在 MCIM、BMCLAPI、官方源之间自动挑路线。",
-        )
-        download_title = StrongBodyLabel("下载源", options_card)
-        download_title.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
-        options_layout.addWidget(download_title)
-
-        mod_download_source_combo = self._build_download_source_combo()
-        apply_input_style(mod_download_source_combo)
-        options_layout.addWidget(mod_download_source_combo)
-
-        mod_dry_run_checkbox = CheckBox("仅试运行，不移动模组", options_card)
-        mod_use_mcmod_checkbox = CheckBox("启用 MC百科（可能需要人工验证码）", options_card)
-        mod_use_mcmod_checkbox.setChecked(True)
-        mod_use_cf_checkbox = CheckBox("启用 CurseForge（测试版）", options_card)
-        mod_second_pass_checkbox = CheckBox("启用 2 次筛选补查", options_card)
-        for checkbox in (
-            mod_dry_run_checkbox,
-            mod_use_mcmod_checkbox,
-            mod_use_cf_checkbox,
-            mod_second_pass_checkbox,
-        ):
-            options_layout.addWidget(checkbox)
-
-        mod_start_button = PrimaryPushButton("开始筛选", options_card)
+        mod_start_button = PrimaryPushButton("开始筛选", left_column)
         mod_start_button.clicked.connect(self.app.start_mod_task)
-        options_layout.addWidget(mod_start_button)
-
-        quick_tip_card, quick_tip_layout = self._create_card(
-            "输入提示",
-            "拖进来的是整合包时，后端会先整理成本地工作区，再进入同一套筛选流程。",
-        )
-        for tip in [
-            "目录、zip、mrpack 都支持直接拖入当前窗口。",
-            "如果只想先看判定结果，可以勾选“仅试运行”。",
-            "待确认数量多的时候，优先看结果预览表和报告页。",
-        ]:
-            label = BodyLabel(f"• {tip}", quick_tip_card)
-            label.setWordWrap(True)
-            apply_label_tone(label, muted=True)
-            quick_tip_layout.addWidget(label)
 
         left_layout.addWidget(source_card)
-        left_layout.addWidget(options_card)
-        left_layout.addWidget(quick_tip_card)
+        left_layout.addWidget(quick_card)
+        left_layout.addWidget(mod_start_button)
         left_layout.addStretch(1)
 
-        right_column = QWidget(workspace)
-        right_layout = QVBoxLayout(right_column)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(16)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(16)
-
-        status_card, status_layout = self._create_card("运行状态", "核心状态放这里，不需要盯着整页滚动。")
-        mod_stage_label = StrongBodyLabel("当前阶段：等待开始", status_card)
-        mod_stage_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
-        status_layout.addWidget(mod_stage_label)
-
-        mod_status_label = BodyLabel("请选择输入源，然后开始筛选。", status_card)
-        mod_status_label.setWordWrap(True)
-        apply_label_tone(mod_status_label, muted=True)
-        status_layout.addWidget(mod_status_label)
-
-        mod_progress_bar = ProgressBar(status_card)
-        mod_progress_bar.setRange(0, 100)
-        mod_progress_bar.setValue(0)
-        status_layout.addWidget(mod_progress_bar)
-
-        mod_download_label = BodyLabel(build_idle_download_status_text(), status_card)
-        mod_download_label.setWordWrap(True)
-        apply_label_tone(mod_download_label, muted=True)
-        status_layout.addWidget(mod_download_label)
-
-        mod_output_label = BodyLabel("输出位置：尚未运行", status_card)
-        mod_output_label.setWordWrap(True)
-        mod_output_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        apply_label_tone(mod_output_label, muted=True)
-        status_layout.addWidget(mod_output_label)
-
-        mod_action_row = QHBoxLayout()
-        mod_result_button = PushButton("打开结果目录", status_card)
-        mod_result_button.setEnabled(False)
-        mod_result_button.clicked.connect(lambda: self.app.open_panel_path("mod", "result"))
-        mod_action_row.addWidget(mod_result_button)
-        mod_report_button = PushButton("查看结果报告", status_card)
-        mod_report_button.clicked.connect(lambda: self.app.open_page(self.app.report_page))
-        mod_action_row.addWidget(mod_report_button)
-        mod_action_row.addStretch(1)
-        status_layout.addLayout(mod_action_row)
+        (
+            status_card,
+            mod_stage_label,
+            mod_status_label,
+            mod_progress_bar,
+            mod_download_label,
+            mod_output_label,
+            mod_result_button,
+            _mod_report_button,
+        ) = self._build_status_card(
+            "运行状态",
+            "请选择输入源，然后开始筛选。",
+            "打开结果目录",
+            lambda: self.app.open_panel_path("mod", "result"),
+            lambda: self.app.open_page(self.app.report_page),
+            parent=right_column,
+        )
+        right_layout.addWidget(status_card, 0)
 
         mod_stage_board = StageBoard(
             "任务阶段",
             [
                 ("scan", "读取目录"),
                 ("classify", "首轮筛选"),
-                ("second-pass", "二次筛选"),
-                ("organize", "整理结果"),
-                ("report", "写出报告"),
+                ("second-pass", "补查确认"),
                 ("complete", "完成"),
             ],
             right_column,
         )
-
-        top_row.addWidget(status_card, 3)
-        top_row.addWidget(mod_stage_board, 2)
-        right_layout.addLayout(top_row)
+        right_layout.addWidget(mod_stage_board, 0)
 
         metric_row = QHBoxLayout()
-        metric_row.setSpacing(12)
-        mod_keep_card = MetricCard("服务端保留", "--", "能直接留在服务端的模组")
-        mod_client_card = MetricCard("纯客户端", "--", "可以自动移出服务端的模组")
-        mod_unknown_card = MetricCard("待确认", "--", "这一批建议你人工再看一眼")
+        metric_row.setSpacing(10)
+        mod_keep_card = MetricCard("服务端保留", "--", "可留在服务端")
+        mod_client_card = MetricCard("纯客户端", "--", "可从服务端移出")
+        mod_unknown_card = MetricCard("待确认", "--", "建议人工查看")
         metric_row.addWidget(mod_keep_card)
         metric_row.addWidget(mod_client_card)
         metric_row.addWidget(mod_unknown_card)
         right_layout.addLayout(metric_row)
 
-        preview_card, preview_layout = self._create_card("结果与控制台", "筛选完成后，结果预览会直接从分类报告里读取重点条目。")
-        result_page = QWidget(preview_card)
-        result_layout = QVBoxLayout(result_page)
-        result_layout.setContentsMargins(0, 0, 0, 0)
-        result_layout.setSpacing(10)
-
-        mod_result_hint_label = BodyLabel("还没有筛选结果。任务完成后，这里会优先展示待确认和关键条目。", result_page)
-        mod_result_hint_label.setWordWrap(True)
-        apply_label_tone(mod_result_hint_label, muted=True)
-        result_layout.addWidget(mod_result_hint_label)
-
-        mod_result_table = build_result_table(result_page)
-        result_layout.addWidget(mod_result_table)
-
-        summary_page = QWidget(preview_card)
-        summary_layout = QVBoxLayout(summary_page)
-        summary_layout.setContentsMargins(0, 0, 0, 0)
-        mod_summary_edit = PlainTextEdit(summary_page)
-        mod_summary_edit.setReadOnly(True)
-        mod_summary_edit.setPlainText("任务完成后，这里会展示结果摘要、输出目录和报告路径。")
-        apply_read_only_editor_style(mod_summary_edit)
-        summary_layout.addWidget(mod_summary_edit)
-
-        log_page = QWidget(preview_card)
-        log_layout = QVBoxLayout(log_page)
-        log_layout.setContentsMargins(0, 0, 0, 0)
-        mod_log_edit = PlainTextEdit(log_page)
-        mod_log_edit.setReadOnly(True)
-        mod_log_edit.setPlainText("实时日志会滚动显示在这里。")
-        apply_read_only_editor_style(mod_log_edit, console=True)
-        log_layout.addWidget(mod_log_edit)
-
+        preview_card, preview_layout = self._create_card("结果与日志")
+        preview_card.setParent(right_column)
+        preview_card.setMinimumHeight(250)
+        result_page, mod_summary_edit, mod_log_edit, mod_result_table, mod_result_hint_label = self._build_log_pages(
+            preview_card,
+            with_result_table=True,
+        )
+        summary_page = mod_summary_edit.parentWidget()
+        log_page = mod_log_edit.parentWidget()
         tab_host, _, _ = build_tab_host(
             preview_card,
             [
@@ -417,12 +451,8 @@ class QtPageFactory:
         preview_layout.addWidget(tab_host)
         right_layout.addWidget(preview_card, 1)
 
-        workspace.addWidget(left_column)
-        workspace.addWidget(right_column)
-        workspace.setStretchFactor(0, 0)
-        workspace.setStretchFactor(1, 1)
-        page.container_layout.addWidget(workspace, 1)
-
+        assert mod_result_table is not None
+        assert mod_result_hint_label is not None
         return ModPageBuild(
             page=page,
             panel=TaskPanelState(
@@ -445,161 +475,69 @@ class QtPageFactory:
                 result_table=mod_result_table,
                 result_hint_label=mod_result_hint_label,
             ),
-            inputs=ModInputWidgets(
-                path_edit=mod_path_edit,
-                download_source_combo=mod_download_source_combo,
-                dry_run_checkbox=mod_dry_run_checkbox,
-                use_mcmod_checkbox=mod_use_mcmod_checkbox,
-                use_cf_checkbox=mod_use_cf_checkbox,
-                second_pass_checkbox=mod_second_pass_checkbox,
-            ),
+            inputs=ModInputWidgets(path_edit=mod_path_edit, dry_run_checkbox=mod_dry_run_checkbox),
         )
 
     def build_server_page(self) -> ServerPageBuild:
-        page = ScrollablePage(
+        page = TaskPage(
             "serverPage",
             "一键开服",
-            "左侧准备输入和参数，右侧专门盯版本识别、安装阶段、启动验证和完整日志。",
+            "选择客户端输入源和服务端输出目录；制作过程固定显示在右侧。",
             self.app,
         )
-        workspace = QSplitter(Qt.Horizontal, page)
-        workspace.setChildrenCollapsible(False)
-        workspace.setHandleWidth(1)
-        workspace.setStyleSheet("QSplitter::handle { background: #0F172A; }")
+        left_column, left_layout, right_column, right_layout = self._build_task_workspace(page)
 
-        left_column = QWidget(workspace)
-        left_column.setMinimumWidth(360)
-        left_column.setMaximumWidth(420)
-        left_layout = QVBoxLayout(left_column)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(16)
-
-        source_card, source_layout = self._create_card("客户端输入源", "支持完整客户端目录、mrpack、CurseForge 风格 zip。", variant="hero")
+        source_card, source_layout = self._create_card("客户端输入源", "选择客户端目录或整合包。", variant="hero")
+        source_card.setParent(left_column)
         server_client_path_edit = LineEdit(source_card)
-        server_client_path_edit.setPlaceholderText("选择客户端目录或整合包")
+        server_client_path_edit.setPlaceholderText("选择客户端目录、.mrpack 或 .zip")
         server_client_path_edit.setClearButtonEnabled(True)
         apply_input_style(server_client_path_edit)
         source_layout.addWidget(server_client_path_edit)
+        source_layout.addLayout(self._build_path_buttons(source_card, "浏览目录", self.app.choose_client_folder, "选择整合包", self.app.choose_server_archive))
 
-        source_button_row = QHBoxLayout()
-        source_button_row.setSpacing(10)
-        client_folder_button = PushButton("浏览目录", source_card)
-        client_folder_button.clicked.connect(self.app.choose_client_folder)
-        source_button_row.addWidget(client_folder_button)
-
-        client_archive_button = PushButton("选择整合包", source_card)
-        client_archive_button.clicked.connect(self.app.choose_server_archive)
-        source_button_row.addWidget(client_archive_button)
-        source_layout.addLayout(source_button_row)
-
-        output_card, output_layout = self._create_card("服务端输出目录", "建议先新建一个空目录，避免和现有文件混在一起。")
+        output_card, output_layout = self._create_card("服务端输出目录", "建议选择新的空目录。")
+        output_card.setParent(left_column)
         server_output_path_edit = LineEdit(output_card)
-        server_output_path_edit.setPlaceholderText("选择新的空服务端输出目录")
+        server_output_path_edit.setPlaceholderText("选择服务端输出目录")
         server_output_path_edit.setClearButtonEnabled(True)
         apply_input_style(server_output_path_edit)
         output_layout.addWidget(server_output_path_edit)
+        output_layout.addLayout(self._build_path_buttons(output_card, "浏览输出目录", self.app.choose_output_folder))
 
-        output_button = PushButton("浏览输出目录", output_card)
-        output_button.clicked.connect(self.app.choose_output_folder)
-        output_layout.addWidget(output_button)
+        settings_card, settings_layout = self._create_card("本次任务")
+        settings_card.setParent(left_column)
+        settings_button = PushButton("全局开服默认设置可在设置中修改", settings_card)
+        settings_button.clicked.connect(lambda: self.app.open_page(self.app.settings_page))
+        settings_layout.addWidget(settings_button)
 
-        options_card, options_layout = self._create_card(
-            "开服策略",
-            "整合包会先被整理成本地客户端工作区，再走版本识别、安装器下载、服务端安装、模组筛选和两次启动验证。",
-        )
-        download_title = StrongBodyLabel("下载源", options_card)
-        download_title.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
-        options_layout.addWidget(download_title)
-
-        server_download_source_combo = self._build_download_source_combo()
-        apply_input_style(server_download_source_combo)
-        options_layout.addWidget(server_download_source_combo)
-
-        server_use_mcmod_checkbox = CheckBox("启用 MC百科（可能需要人工验证码）", options_card)
-        server_use_mcmod_checkbox.setChecked(True)
-        server_use_cf_checkbox = CheckBox("启用 CurseForge（测试版）", options_card)
-        server_second_pass_checkbox = CheckBox("启用 2 次筛选补查", options_card)
-        for checkbox in (
-            server_use_mcmod_checkbox,
-            server_use_cf_checkbox,
-            server_second_pass_checkbox,
-        ):
-            options_layout.addWidget(checkbox)
-
-        server_start_button = PrimaryPushButton("开始制作服务端", options_card)
+        server_start_button = PrimaryPushButton("开始制作", left_column)
         server_start_button.clicked.connect(self.app.start_server_task)
-        options_layout.addWidget(server_start_button)
-
-        quick_tip_card, quick_tip_layout = self._create_card(
-            "执行提示",
-            "一键开服过程中如果遇到版本选择或复制核查，会直接弹出阻塞弹窗，不会静默跳过。",
-        )
-        for tip in [
-            "输出目录必须是新的空目录。",
-            "开服流程会自动下载缺失环境和安装器。",
-            "首次启动、写入 eula、二次启动验证的结果都能在右侧时间线里看到。",
-        ]:
-            label = BodyLabel(f"• {tip}", quick_tip_card)
-            label.setWordWrap(True)
-            apply_label_tone(label, muted=True)
-            quick_tip_layout.addWidget(label)
 
         left_layout.addWidget(source_card)
         left_layout.addWidget(output_card)
-        left_layout.addWidget(options_card)
-        left_layout.addWidget(quick_tip_card)
+        left_layout.addWidget(settings_card)
+        left_layout.addWidget(server_start_button)
         left_layout.addStretch(1)
 
-        right_column = QWidget(workspace)
-        right_layout = QVBoxLayout(right_column)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(16)
-
-        top_row = QHBoxLayout()
-        top_row.setSpacing(16)
-
-        status_card, status_layout = self._create_card("运行状态", "把当前阶段、下载状态、输出路径和快捷操作集中放到一起。")
-        server_stage_label = StrongBodyLabel("当前阶段：等待开始", status_card)
-        server_stage_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
-        status_layout.addWidget(server_stage_label)
-
-        server_status_label = BodyLabel("请选择客户端输入源和输出目录，然后开始制作服务端。", status_card)
-        server_status_label.setWordWrap(True)
-        apply_label_tone(server_status_label, muted=True)
-        status_layout.addWidget(server_status_label)
-
-        server_progress_bar = ProgressBar(status_card)
-        server_progress_bar.setRange(0, 100)
-        server_progress_bar.setValue(0)
-        status_layout.addWidget(server_progress_bar)
-
-        server_download_label = BodyLabel(build_idle_download_status_text(), status_card)
-        server_download_label.setWordWrap(True)
-        apply_label_tone(server_download_label, muted=True)
-        status_layout.addWidget(server_download_label)
-
-        server_output_label = BodyLabel("输出位置：尚未运行", status_card)
-        server_output_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        server_output_label.setWordWrap(True)
-        apply_label_tone(server_output_label, muted=True)
-        status_layout.addWidget(server_output_label)
-
-        server_action_row = QHBoxLayout()
-        server_result_button = PushButton("打开服务端目录", status_card)
-        server_result_button.setEnabled(False)
-        server_result_button.clicked.connect(lambda: self.app.open_panel_path("server", "result"))
-        server_action_row.addWidget(server_result_button)
-
-        server_extra_button = PushButton("打开日志目录", status_card)
-        server_extra_button.setEnabled(False)
-        server_extra_button.clicked.connect(lambda: self.app.open_panel_path("server", "extra"))
-        server_action_row.addWidget(server_extra_button)
-
-        server_report_button = PushButton("查看结果报告", status_card)
-        server_report_button.clicked.connect(lambda: self.app.open_page(self.app.report_page))
-        server_action_row.addWidget(server_report_button)
-        server_action_row.addStretch(1)
-        status_layout.addLayout(server_action_row)
+        (
+            status_card,
+            server_stage_label,
+            server_status_label,
+            server_progress_bar,
+            server_download_label,
+            server_output_label,
+            server_result_button,
+            _server_report_button,
+        ) = self._build_status_card(
+            "运行状态",
+            "请选择客户端输入源和输出目录，然后开始制作。",
+            "打开服务端目录",
+            lambda: self.app.open_panel_path("server", "result"),
+            lambda: self.app.open_page(self.app.report_page),
+            parent=right_column,
+        )
+        right_layout.addWidget(status_card, 0)
 
         server_stage_board = StageBoard(
             "开服阶段",
@@ -609,39 +547,21 @@ class QtPageFactory:
                 ("installer", "下载安装器"),
                 ("install", "安装服务端"),
                 ("classify", "筛选模组"),
-                ("copy-mods", "复制模组"),
-                ("copy-configs", "复制配置"),
-                ("first-boot", "首次启动"),
-                ("patch", "修正配置"),
-                ("verify", "二次验证"),
-                ("complete", "完成"),
+                ("verify", "启动验证"),
             ],
             right_column,
         )
+        right_layout.addWidget(server_stage_board, 0)
 
-        top_row.addWidget(status_card, 3)
-        top_row.addWidget(server_stage_board, 2)
-        right_layout.addLayout(top_row)
-
-        preview_card, preview_layout = self._create_card("摘要与日志", "安装过程里最重要的两块信息都固定在这里，不再来回翻页。")
-        summary_page = QWidget(preview_card)
-        summary_layout = QVBoxLayout(summary_page)
-        summary_layout.setContentsMargins(0, 0, 0, 0)
-        server_summary_edit = PlainTextEdit(summary_page)
-        server_summary_edit.setReadOnly(True)
-        server_summary_edit.setPlainText("任务完成后，这里会展示服务端目录、日志目录和启动脚本路径。")
-        apply_read_only_editor_style(server_summary_edit)
-        summary_layout.addWidget(server_summary_edit)
-
-        log_page = QWidget(preview_card)
-        log_layout = QVBoxLayout(log_page)
-        log_layout.setContentsMargins(0, 0, 0, 0)
-        server_log_edit = PlainTextEdit(log_page)
-        server_log_edit.setReadOnly(True)
-        server_log_edit.setPlainText("实时日志会滚动显示在这里。")
-        apply_read_only_editor_style(server_log_edit, console=True)
-        log_layout.addWidget(server_log_edit)
-
+        preview_card, preview_layout = self._create_card("摘要与日志")
+        preview_card.setParent(right_column)
+        preview_card.setMinimumHeight(330)
+        _log_page, server_summary_edit, server_log_edit, _table, _hint = self._build_log_pages(
+            preview_card,
+            with_result_table=False,
+        )
+        summary_page = server_summary_edit.parentWidget()
+        log_page = server_log_edit.parentWidget()
         tab_host, _, _ = build_tab_host(
             preview_card,
             [
@@ -652,11 +572,12 @@ class QtPageFactory:
         preview_layout.addWidget(tab_host)
         right_layout.addWidget(preview_card, 1)
 
-        workspace.addWidget(left_column)
-        workspace.addWidget(right_column)
-        workspace.setStretchFactor(0, 0)
-        workspace.setStretchFactor(1, 1)
-        page.container_layout.addWidget(workspace, 1)
+        server_extra_button = PushButton("打开日志目录", status_card)
+        server_extra_button.setEnabled(False)
+        server_extra_button.clicked.connect(lambda: self.app.open_panel_path("server", "extra"))
+        status_layout = status_card.layout()
+        if status_layout is not None:
+            status_layout.addWidget(server_extra_button, 0, Qt.AlignLeft)
 
         return ServerPageBuild(
             page=page,
@@ -673,100 +594,84 @@ class QtPageFactory:
                 extra_button=server_extra_button,
                 stage_board=server_stage_board,
             ),
-            inputs=ServerInputWidgets(
-                client_path_edit=server_client_path_edit,
-                output_path_edit=server_output_path_edit,
-                download_source_combo=server_download_source_combo,
-                use_mcmod_checkbox=server_use_mcmod_checkbox,
-                use_cf_checkbox=server_use_cf_checkbox,
-                second_pass_checkbox=server_second_pass_checkbox,
-            ),
+            inputs=ServerInputWidgets(client_path_edit=server_client_path_edit, output_path_edit=server_output_path_edit),
         )
 
     def build_report_page(self) -> ReportPageBuild:
         page = ScrollablePage(
             "reportPage",
             "结果报告",
-            "这里专门负责回看最近一次筛模组和最近一次开服结果，少走目录、少翻日志。",
+            "回看最近一次模组筛选和服务端制作结果。",
             self.app,
         )
-        dashboard = QWidget(page)
-        dashboard_layout = QGridLayout(dashboard)
-        dashboard_layout.setContentsMargins(0, 0, 0, 0)
-        dashboard_layout.setHorizontalSpacing(16)
-        dashboard_layout.setVerticalSpacing(16)
-        dashboard_layout.setColumnStretch(0, 1)
-        dashboard_layout.setColumnStretch(1, 1)
+        grid = QWidget(page)
+        grid_layout = QGridLayout(grid)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+        grid_layout.setHorizontalSpacing(14)
+        grid_layout.setVerticalSpacing(14)
+        grid_layout.setColumnStretch(0, 1)
+        grid_layout.setColumnStretch(1, 1)
 
-        mod_card, mod_layout = self._create_card("模组筛选结果", "用来快速打开最近一次分类结果目录。")
-        mod_status = StrongBodyLabel("当前还没有模组筛选结果。", mod_card)
-        mod_status.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
-        mod_layout.addWidget(mod_status)
+        mod_card, mod_layout = self._create_card("模组筛选结果")
+        mod_status = StrongBodyLabel("还没有最近结果", mod_card)
+        mod_time = BodyLabel("最近时间：暂无", mod_card)
         mod_summary = PlainTextEdit(mod_card)
         mod_summary.setReadOnly(True)
         mod_summary.setMinimumHeight(220)
-        mod_summary.setPlainText("完成一次模组筛选后，这里会同步结果摘要。")
+        mod_summary.setPlainText("完成一次模组筛选后，这里会显示结果摘要。")
         apply_read_only_editor_style(mod_summary)
+        mod_status.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
+        mod_time.setWordWrap(True)
+        apply_label_tone(mod_time, muted=True)
+        mod_layout.addWidget(mod_status)
+        mod_layout.addWidget(mod_time)
         mod_layout.addWidget(mod_summary)
-
-        mod_button_row = QHBoxLayout()
-        mod_result_button = PushButton("打开结果目录", mod_card)
+        mod_buttons = QHBoxLayout()
+        mod_result_button = PushButton("打开目录", mod_card)
         mod_result_button.setEnabled(False)
         mod_result_button.clicked.connect(lambda: self.app.open_report_path("mod", "result"))
-        mod_button_row.addWidget(mod_result_button)
-        mod_page_button = PushButton("回到模组筛选页", mod_card)
+        mod_buttons.addWidget(mod_result_button)
+        mod_log_button = PushButton("查看日志", mod_card)
+        mod_log_button.clicked.connect(lambda: self.app.open_page(self.app.mod_page))
+        mod_buttons.addWidget(mod_log_button)
+        mod_page_button = PushButton("返回页面", mod_card)
         mod_page_button.clicked.connect(lambda: self.app.open_page(self.app.mod_page))
-        mod_button_row.addWidget(mod_page_button)
-        mod_button_row.addStretch(1)
-        mod_layout.addLayout(mod_button_row)
+        mod_buttons.addWidget(mod_page_button)
+        mod_buttons.addStretch(1)
+        mod_layout.addLayout(mod_buttons)
 
-        server_card, server_layout = self._create_card("一键开服结果", "用来快速打开最近一次服务端目录和日志目录。")
-        server_status = StrongBodyLabel("当前还没有服务端制作结果。", server_card)
-        server_status.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
-        server_layout.addWidget(server_status)
+        server_card, server_layout = self._create_card("一键开服结果")
+        server_status = StrongBodyLabel("还没有最近结果", server_card)
+        server_time = BodyLabel("最近时间：暂无", server_card)
         server_summary = PlainTextEdit(server_card)
         server_summary.setReadOnly(True)
         server_summary.setMinimumHeight(220)
-        server_summary.setPlainText("完成一次服务端制作后，这里会同步服务端目录、日志目录和启动脚本位置。")
+        server_summary.setPlainText("完成一次服务端制作后，这里会显示服务端目录、日志目录和启动脚本位置。")
         apply_read_only_editor_style(server_summary)
+        server_status.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
+        server_time.setWordWrap(True)
+        apply_label_tone(server_time, muted=True)
+        server_layout.addWidget(server_status)
+        server_layout.addWidget(server_time)
         server_layout.addWidget(server_summary)
-
-        server_button_row = QHBoxLayout()
-        server_result_button = PushButton("打开服务端目录", server_card)
+        server_buttons = QHBoxLayout()
+        server_result_button = PushButton("打开目录", server_card)
         server_result_button.setEnabled(False)
         server_result_button.clicked.connect(lambda: self.app.open_report_path("server", "result"))
-        server_button_row.addWidget(server_result_button)
-
-        server_extra_button = PushButton("打开日志目录", server_card)
+        server_buttons.addWidget(server_result_button)
+        server_extra_button = PushButton("查看日志", server_card)
         server_extra_button.setEnabled(False)
         server_extra_button.clicked.connect(lambda: self.app.open_report_path("server", "extra"))
-        server_button_row.addWidget(server_extra_button)
-        server_page_button = PushButton("回到一键开服页", server_card)
+        server_buttons.addWidget(server_extra_button)
+        server_page_button = PushButton("返回页面", server_card)
         server_page_button.clicked.connect(lambda: self.app.open_page(self.app.server_page))
-        server_button_row.addWidget(server_page_button)
-        server_button_row.addStretch(1)
-        server_layout.addLayout(server_button_row)
+        server_buttons.addWidget(server_page_button)
+        server_buttons.addStretch(1)
+        server_layout.addLayout(server_buttons)
 
-        usage_card, usage_layout = self._create_card(
-            "怎么看这些结果",
-            "报告页不负责跑任务，它只负责集中给你开目录和回看摘要。",
-            variant="hero",
-        )
-        for text in [
-            "筛模组完成后，优先从模组筛选页右侧的结果预览看待确认项。",
-            "一键开服完成后，服务端目录和日志目录都能从这里直接打开。",
-            "如果想继续操作，右侧按钮可以直接跳回对应工作页。",
-        ]:
-            label = BodyLabel(f"• {text}", usage_card)
-            label.setWordWrap(True)
-            apply_label_tone(label, muted=True)
-            usage_layout.addWidget(label)
-
-        dashboard_layout.addWidget(mod_card, 0, 0)
-        dashboard_layout.addWidget(server_card, 0, 1)
-        dashboard_layout.addWidget(usage_card, 1, 0, 1, 2)
-
-        page.container_layout.addWidget(dashboard)
+        grid_layout.addWidget(mod_card, 0, 0)
+        grid_layout.addWidget(server_card, 0, 1)
+        page.container_layout.addWidget(grid)
         page.container_layout.addStretch(1)
 
         return ReportPageBuild(
@@ -774,12 +679,14 @@ class QtPageFactory:
             sections={
                 "mod": ReportSectionState(
                     status_label=mod_status,
+                    time_label=mod_time,
                     summary_edit=mod_summary,
                     result_button=mod_result_button,
                     extra_button=None,
                 ),
                 "server": ReportSectionState(
                     status_label=server_status,
+                    time_label=server_time,
                     summary_edit=server_summary,
                     result_button=server_result_button,
                     extra_button=server_extra_button,
@@ -787,63 +694,118 @@ class QtPageFactory:
             },
         )
 
-    def build_settings_page(self) -> ScrollablePage:
+    def build_settings_page(self) -> SettingsPageBuild:
         page = ScrollablePage(
             "settingsPage",
             "设置",
-            "这一页先放技术栈、缓存清理和当前界面目标，后面再把更细的偏好配置补进来。",
+            "调整筛选规则、开服默认值、缓存和界面偏好。",
             self.app,
         )
+        grid = QWidget(page)
+        grid_layout = QGridLayout(grid)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+        grid_layout.setHorizontalSpacing(14)
+        grid_layout.setVerticalSpacing(14)
+        grid_layout.setColumnStretch(0, 1)
+        grid_layout.setColumnStretch(1, 1)
 
-        dashboard = QWidget(page)
-        dashboard_layout = QGridLayout(dashboard)
-        dashboard_layout.setContentsMargins(0, 0, 0, 0)
-        dashboard_layout.setHorizontalSpacing(16)
-        dashboard_layout.setVerticalSpacing(16)
-        dashboard_layout.setColumnStretch(0, 1)
-        dashboard_layout.setColumnStretch(1, 1)
+        filter_card, filter_layout = self._create_card("筛选规则设置", "这些选项会影响模组筛选和开服时的模组处理。")
+        filter_download_source_combo = self._build_download_source_combo()
+        self._add_control_row(filter_layout, "下载源", filter_download_source_combo)
+        filter_use_mcmod_checkbox = CheckBox("需要时查询 MC百科", filter_card)
+        filter_use_mcmod_checkbox.setChecked(True)
+        filter_use_cf_checkbox = CheckBox("需要时查询 CurseForge", filter_card)
+        filter_second_pass_checkbox = CheckBox("启用补查确认", filter_card)
+        filter_manual_review_checkbox = CheckBox("保留人工确认提示", filter_card)
+        filter_manual_review_checkbox.setChecked(True)
+        for checkbox in (
+            filter_use_mcmod_checkbox,
+            filter_use_cf_checkbox,
+            filter_second_pass_checkbox,
+            filter_manual_review_checkbox,
+        ):
+            filter_layout.addWidget(checkbox)
 
-        stack_card, stack_layout = self._create_card("当前界面技术栈", variant="hero")
-        for text in [
-            f"桌面框架：PySide6 {getattr(sys.modules.get('PySide6'), '__version__', '')}".strip(),
-            f"Fluent 组件：qfluentwidgets {qfluentwidgets.__version__}",
-            "设计方向：深色 Fluent 工具台，优先突出运行状态、下载状态、日志和结果目录。",
-        ]:
-            label = BodyLabel(text, stack_card)
-            label.setWordWrap(True)
-            apply_label_tone(label, muted=True)
-            stack_layout.addWidget(label)
+        server_card, server_layout = self._create_card("开服默认设置", "默认值用于选择目录和下载来源。")
+        server_output_path_edit = LineEdit(server_card)
+        server_output_path_edit.setPlaceholderText("默认输出目录")
+        server_output_path_edit.setClearButtonEnabled(True)
+        apply_input_style(server_output_path_edit)
+        self._add_control_row(server_layout, "默认输出目录", server_output_path_edit, "浏览输出目录时会优先打开这里。")
+        server_download_source_combo = self._build_download_source_combo()
+        self._add_control_row(server_layout, "默认下载源", server_download_source_combo)
+        java_rule_combo = ComboBox(server_card)
+        for text in ("自动匹配", "优先使用本机 Java", "只使用客户端自带 Java"):
+            java_rule_combo.addItem(text)
+        apply_input_style(java_rule_combo)
+        self._add_control_row(server_layout, "Java 匹配方式", java_rule_combo)
 
-        support_card, support_layout = self._create_card("输入与缓存")
-        for text in [
-            "支持目录、mrpack、zip 直接导入。",
-            "支持拖放文件夹和整合包到窗口中。",
-            "整合包缓存和浏览器缓存会在启动与退出时做一次清理。",
-        ]:
-            label = BodyLabel(f"• {text}", support_card)
-            label.setWordWrap(True)
-            apply_label_tone(label, muted=True)
-            support_layout.addWidget(label)
-
-        cleanup_button = PrimaryPushButton("立即清理整合包缓存", support_card)
+        cache_card, cache_layout = self._create_card("缓存与存储")
+        cache_path_edit = LineEdit(cache_card)
+        cache_path_edit.setPlaceholderText("使用系统临时目录")
+        cache_path_edit.setClearButtonEnabled(True)
+        apply_input_style(cache_path_edit)
+        self._add_control_row(cache_layout, "缓存路径", cache_path_edit)
+        cache_auto_cleanup_checkbox = CheckBox("启动和退出时自动清理临时缓存", cache_card)
+        cache_auto_cleanup_checkbox.setChecked(True)
+        cache_layout.addWidget(cache_auto_cleanup_checkbox)
+        cleanup_button = PrimaryPushButton("清理整合包缓存", cache_card)
         cleanup_button.clicked.connect(self.app.cleanup_import_cache)
-        support_layout.addWidget(cleanup_button, 0, Qt.AlignLeft)
+        cache_layout.addWidget(cleanup_button, 0, Qt.AlignLeft)
 
-        direction_card, direction_layout = self._create_card("界面目标")
+        interface_card, interface_layout = self._create_card("界面设置")
+        theme_combo = ComboBox(interface_card)
+        for text in ("深色模式", "浅色模式"):
+            theme_combo.addItem(text)
+        apply_input_style(theme_combo)
+        self._add_control_row(interface_layout, "主题", theme_combo)
+        scale_combo = ComboBox(interface_card)
+        for text in ("100%", "110%", "125%"):
+            scale_combo.addItem(text)
+        apply_input_style(scale_combo)
+        self._add_control_row(interface_layout, "缩放比例", scale_combo)
+        detail_log_checkbox = CheckBox("显示详细日志", interface_card)
+        detail_log_checkbox.setChecked(True)
+        animation_checkbox = CheckBox("启用界面动效", interface_card)
+        animation_checkbox.setChecked(True)
+        interface_layout.addWidget(detail_log_checkbox)
+        interface_layout.addWidget(animation_checkbox)
+
+        about_card, about_layout = self._create_card("关于")
         for text in [
-            "信息尽量首屏可见，避免用户为了看状态来回滚动。",
-            "操作入口固定在左侧，运行反馈固定在右侧，减轻任务时的视线跳转。",
-            "动画只做轻反馈，不做花里胡哨的抢注意力效果。",
+            "版本：3.00",
+            f"PySide6：{getattr(sys.modules.get('PySide6'), '__version__', '')}".strip(),
+            f"qfluentwidgets：{qfluentwidgets.__version__}",
         ]:
-            label = BodyLabel(f"• {text}", direction_card)
+            label = BodyLabel(text, about_card)
             label.setWordWrap(True)
             apply_label_tone(label, muted=True)
-            direction_layout.addWidget(label)
+            about_layout.addWidget(label)
 
-        dashboard_layout.addWidget(stack_card, 0, 0)
-        dashboard_layout.addWidget(support_card, 0, 1)
-        dashboard_layout.addWidget(direction_card, 1, 0, 1, 2)
-
-        page.container_layout.addWidget(dashboard)
+        grid_layout.addWidget(filter_card, 0, 0)
+        grid_layout.addWidget(server_card, 0, 1)
+        grid_layout.addWidget(cache_card, 1, 0)
+        grid_layout.addWidget(interface_card, 1, 1)
+        grid_layout.addWidget(about_card, 2, 0, 1, 2)
+        page.container_layout.addWidget(grid)
         page.container_layout.addStretch(1)
-        return page
+
+        return SettingsPageBuild(
+            page=page,
+            widgets=SettingsWidgets(
+                filter_download_source_combo=filter_download_source_combo,
+                filter_use_mcmod_checkbox=filter_use_mcmod_checkbox,
+                filter_use_cf_checkbox=filter_use_cf_checkbox,
+                filter_second_pass_checkbox=filter_second_pass_checkbox,
+                filter_manual_review_checkbox=filter_manual_review_checkbox,
+                server_output_path_edit=server_output_path_edit,
+                server_download_source_combo=server_download_source_combo,
+                java_rule_combo=java_rule_combo,
+                cache_path_edit=cache_path_edit,
+                cache_auto_cleanup_checkbox=cache_auto_cleanup_checkbox,
+                theme_combo=theme_combo,
+                scale_combo=scale_combo,
+                detail_log_checkbox=detail_log_checkbox,
+                animation_checkbox=animation_checkbox,
+            ),
+        )
