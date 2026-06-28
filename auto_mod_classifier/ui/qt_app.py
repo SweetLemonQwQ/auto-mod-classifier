@@ -57,6 +57,7 @@ class App(FluentWindow):
         super().__init__()
         self.worker_thread: Optional[threading.Thread] = None
         self.ui_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
+        self._pending_logs: Dict[str, List[str]] = {"mod": [], "server": []}
         self._runtime_ref: Any = None
 
         self.home_widgets: Optional[HomeWidgets] = None
@@ -80,7 +81,7 @@ class App(FluentWindow):
 
     def _build_window(self) -> None:
         self.setWindowTitle(APP_TITLE)
-        self.setMinimumSize(1040, 680)
+        self.setMinimumSize(1000, 640)
         self._resize_to_available_screen()
         self.setAcceptDrops(True)
         self.setMicaEffectEnabled(False)
@@ -91,11 +92,11 @@ class App(FluentWindow):
     def _resize_to_available_screen(self) -> None:
         screen = QApplication.primaryScreen()
         if screen is None:
-            self.resize(1180, 760)
+            self.resize(1120, 720)
             return
         available = screen.availableGeometry()
-        width = min(1280, max(1040, int(available.width() * 0.9)))
-        height = min(820, max(680, int(available.height() * 0.9)))
+        width = min(1180, max(1000, int(available.width() * 0.82)))
+        height = min(760, max(640, int(available.height() * 0.82)))
         self.resize(width, height)
 
     def _build_pages(self) -> None:
@@ -241,6 +242,7 @@ class App(FluentWindow):
         assert self.mod_panel is not None
         self.clear_panel("mod")
         self.mod_panel.status_label.setText("准备开始…")
+        self.mod_panel.status_dot.set_state("running")
         self._set_busy_state(True)
         self._refresh_home_overview(panel_key="mod", status="运行中", output=None)
         settings_widgets = self._require_settings_widgets()
@@ -294,6 +296,7 @@ class App(FluentWindow):
         assert self.server_panel is not None
         self.clear_panel("server")
         self.server_panel.status_label.setText("准备开始…")
+        self.server_panel.status_dot.set_state("running")
         self._set_busy_state(True)
         self._refresh_home_overview(panel_key="server", status="运行中", output=None)
 
@@ -325,12 +328,14 @@ class App(FluentWindow):
 
     def clear_panel(self, panel_key: str) -> None:
         panel = self.get_panel(panel_key)
+        self._pending_logs[panel_key] = []
         panel.log_edit.clear()
         panel.summary_edit.setPlainText("任务进行中，完成后这里会刷新摘要。")
         panel.progress_bar.setValue(0)
         panel.output_label.setText("输出位置：运行中")
         panel.download_label.setText(build_idle_download_status_text())
         panel.stage_label.setText("当前阶段：准备开始")
+        panel.status_dot.set_state("running")
         if panel.stage_board is not None:
             panel.stage_board.reset()
         panel.result_dir = None
@@ -359,8 +364,18 @@ class App(FluentWindow):
     def append_log(self, panel_key: str, message: str) -> None:
         if not message:
             return
-        panel = self.get_panel(panel_key)
-        panel.log_edit.appendPlainText(message.rstrip())
+        self._pending_logs.setdefault(panel_key, []).append(message.rstrip())
+
+    def _flush_pending_logs(self) -> None:
+        for panel_key, messages in self._pending_logs.items():
+            if not messages:
+                continue
+            panel = self.get_panel(panel_key)
+            current_text = panel.log_edit.toPlainText().strip()
+            if current_text == "等待任务开始。":
+                panel.log_edit.clear()
+            panel.log_edit.appendPlainText("\n".join(messages))
+            messages.clear()
 
     def request_version_choice(self, candidates: List[VersionCandidate]) -> Optional[VersionCandidate]:
         event = threading.Event()
@@ -404,6 +419,7 @@ class App(FluentWindow):
                 self._update_stage_by_message(panel_key, str(payload))
             elif kind == "status":
                 panel.status_label.setText(str(payload))
+                panel.status_dot.set_state(self._status_to_dot_state(str(payload)))
                 self._update_stage_by_message(panel_key, str(payload))
             elif kind == "progress":
                 panel.progress_bar.setValue(max(0, min(100, int(float(payload)))))
@@ -415,6 +431,7 @@ class App(FluentWindow):
                 panel.result_dir = payload.get("result_dir")
                 panel.extra_dir = payload.get("extra_dir")
                 panel.status_label.setText(payload["status"])
+                panel.status_dot.set_state("success")
                 panel.progress_bar.setValue(100)
                 panel.output_label.setText(f"输出位置：{payload['output']}")
                 panel.download_label.setText(build_idle_download_status_text())
@@ -434,6 +451,7 @@ class App(FluentWindow):
                 self.show_success(payload["status"])
             elif kind == "error":
                 panel.status_label.setText("运行失败")
+                panel.status_dot.set_state("error")
                 panel.output_label.setText("输出位置：失败")
                 panel.download_label.setText(build_idle_download_status_text())
                 panel.summary_edit.setPlainText(str(payload))
@@ -458,6 +476,8 @@ class App(FluentWindow):
                     dialog.exec()
                     payload["response"] = dialog.selected_keys
                 payload["event"].set()
+
+        self._flush_pending_logs()
 
     def _update_panel_metrics(self, panel_key: str, payload: Dict[str, Any]) -> None:
         if panel_key != "mod" or not self.mod_panel:
@@ -583,6 +603,7 @@ class App(FluentWindow):
         if section is None:
             return
         section.status_label.setText(status)
+        section.status_dot.set_state(self._status_to_dot_state(status))
         section.time_label.setText(f"最近时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         section.summary_edit.setPlainText(summary or status)
         section.result_dir = result_dir
@@ -603,21 +624,33 @@ class App(FluentWindow):
         if panel_key == "mod":
             if status:
                 self.home_widgets.mod_status_label.setText(status)
+                self.home_widgets.mod_status_dot.set_state(self._status_to_dot_state(status))
                 self.home_widgets.mod_time_label.setText(f"最近时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             if output:
                 self.home_widgets.mod_output_label.setText(f"输出位置：{output}")
         elif panel_key == "server":
             if status:
                 self.home_widgets.server_status_label.setText(status)
+                self.home_widgets.server_status_dot.set_state(self._status_to_dot_state(status))
                 self.home_widgets.server_time_label.setText(f"最近时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             if output:
                 self.home_widgets.server_output_label.setText(f"输出位置：{output}")
 
     def _refresh_report_sections(self) -> None:
         for section in self.report_sections.values():
+            section.status_dot.set_state("idle")
             section.result_button.setEnabled(False)
             if section.extra_button is not None:
                 section.extra_button.setEnabled(False)
+
+    def _status_to_dot_state(self, status: str) -> str:
+        if any(word in status for word in ("失败", "错误", "异常")):
+            return "error"
+        if any(word in status for word in ("完成", "成功")):
+            return "success"
+        if any(word in status for word in ("运行", "准备", "处理中")):
+            return "running"
+        return "idle"
 
     def _summarize_error_text(self, payload: str) -> str:
         lines = [line.strip() for line in payload.splitlines() if line.strip()]

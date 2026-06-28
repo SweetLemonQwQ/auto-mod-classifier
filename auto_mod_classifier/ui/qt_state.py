@@ -18,14 +18,16 @@ from qfluentwidgets import (
 )
 
 if TYPE_CHECKING:
-    from .qt_widgets import MetricCard, StageBoard
+    from .qt_widgets import MetricCard, StageBoard, StatusDot
 
 
 @dataclass
 class HomeWidgets:
+    mod_status_dot: "StatusDot"
     mod_status_label: StrongBodyLabel
     mod_time_label: BodyLabel
     mod_output_label: BodyLabel
+    server_status_dot: "StatusDot"
     server_status_label: StrongBodyLabel
     server_time_label: BodyLabel
     server_output_label: BodyLabel
@@ -33,6 +35,7 @@ class HomeWidgets:
 
 @dataclass
 class ReportSectionState:
+    status_dot: "StatusDot"
     status_label: StrongBodyLabel
     time_label: BodyLabel
     summary_edit: PlainTextEdit
@@ -44,6 +47,7 @@ class ReportSectionState:
 
 @dataclass
 class TaskPanelState:
+    status_dot: "StatusDot"
     stage_label: StrongBodyLabel
     status_label: BodyLabel
     progress_bar: ProgressBar
