@@ -13,6 +13,8 @@ class ImporterRegistry:
         for importer in self.importers:
             if importer.supports(source_path):
                 return importer
+        if source_path.exists() and source_path.is_file():
+            raise RuntimeError(f"暂不支持该文件类型：{source_path.suffix or '无后缀'}。目前只支持目录、.zip 和 .mrpack。")
         raise RuntimeError(f"暂不支持该输入源：{source_path}")
 
     def prepare_mod_scan(self, request: ScanModsRequest, emit) -> PreparedModScanSource:

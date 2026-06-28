@@ -1,3 +1,4 @@
+import traceback
 from typing import Any, Callable, Optional
 
 from .contracts import ModScanService, ServerBuildService, SourceImporterRegistry
@@ -18,7 +19,12 @@ class ScanModsUseCase:
         set_runtime_ref: Callable[[Any], None],
     ) -> None:
         # 这里先把输入整理成统一格式，再交给真正的筛选服务。
-        source = self.importer_registry.prepare_mod_scan(request, emit)
+        try:
+            source = self.importer_registry.prepare_mod_scan(request, emit)
+        except Exception as exc:
+            emit("log", traceback.format_exc())
+            emit("error", str(exc))
+            return
         try:
             self.mod_scan_service.run(source, request, emit, set_runtime_ref)
         finally:
@@ -41,7 +47,12 @@ class BuildServerUseCase:
         request_checklist: Callable[[str, str, list], Optional[list]],
     ) -> None:
         # 一键开服同样先走输入整理，这样后面才能轻松支持目录、mrpack、zip 等来源。
-        source = self.importer_registry.prepare_server_build(request, emit)
+        try:
+            source = self.importer_registry.prepare_server_build(request, emit)
+        except Exception as exc:
+            emit("log", traceback.format_exc())
+            emit("error", str(exc))
+            return
         try:
             self.server_build_service.run(
                 source,

@@ -13,8 +13,10 @@ class ServerBuilderRuntime:
     log: Callable[[str], None]
     set_status: Callable[[str], None]
     set_progress: Callable[[float], None]
+    set_download_status: Callable[[str], None]
     request_version_choice: Callable[[List[VersionCandidate]], Optional[VersionCandidate]]
     request_checklist: Callable[[str, str, List[ReviewItem]], Optional[List[str]]]
+    download_source: str
     use_mcmod: bool
     enable_second_pass: bool
     prepared_version_candidates: List[VersionCandidate] = field(default_factory=list)

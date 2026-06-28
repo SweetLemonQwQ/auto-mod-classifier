@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..classifier import classify_jars_parallel, rerun_unknown_classifications
+from ..download_support import DownloadStatsReporter
 from ..shared import *
 from .common import ServerBuilderCommonService
 from .context import ServerBuilderRuntime
@@ -644,7 +645,11 @@ class ServerInstallService:
     def download_installer(self, spec: InstallerSpec, temp_dir: Path) -> Path:
         destination = temp_dir / spec.file_name
         self.common.log_line(f"下载官方安装器：{spec.download_url}")
-        self.common.http_download(spec.download_url, destination)
+        reporter = DownloadStatsReporter(self.runtime.set_download_status, total_files=1, thread_limit=1)
+        try:
+            self.common.http_download(spec.download_url, destination, reporter=reporter)
+        finally:
+            reporter.close()
         return destination
 
     def install_server(self, output_root: Path, candidate: VersionCandidate, installer_path: Path, java_runtime: JavaRuntime) -> None:

@@ -1,5 +1,6 @@
 from ..application.models import BuildServerRequest, PreparedModScanSource, PreparedServerSource, ScanModsRequest
 from ..classifier import ClassifierCore, classify_jars_parallel, rerun_unknown_classifications
+from ..download_support import build_idle_download_status_text
 from ..server_builder import ServerBuilderCore
 from ..shared import *
 
@@ -158,6 +159,7 @@ class LegacyModScanService:
                 },
             )
         except Exception:
+            emit("download-stats", build_idle_download_status_text())
             emit("error", traceback.format_exc())
         finally:
             if classifier is not None:
@@ -192,8 +194,10 @@ class LegacyServerBuildService:
                 log=lambda message: emit("log", message),
                 set_status=lambda message: emit("status", message),
                 set_progress=lambda value: emit("progress", value),
+                set_download_status=lambda message: emit("download-stats", message),
                 request_version_choice=request_version_choice,
                 request_checklist=request_checklist,
+                download_source=request.download_source,
                 use_mcmod=request.use_mcmod,
                 enable_second_pass=request.enable_second_pass,
                 prepared_version_candidates=source.version_candidates,
@@ -218,6 +222,7 @@ class LegacyServerBuildService:
                 },
             )
         except Exception:
+            emit("download-stats", build_idle_download_status_text())
             emit("error", traceback.format_exc())
             has_server = False
             try:

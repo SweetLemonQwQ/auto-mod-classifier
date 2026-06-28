@@ -14,6 +14,7 @@ class PanelState:
     status_var: tk.StringVar
     progress_var: tk.DoubleVar
     output_var: tk.StringVar
+    download_var: tk.StringVar
     log_widget: ScrolledText
     result_dir: Optional[Path] = None
     extra_dir: Optional[Path] = None

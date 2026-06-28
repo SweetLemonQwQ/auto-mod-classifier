@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
+from ..download_support import DownloadStatsReporter, http_download, http_get_json, http_get_text
 from ..shared import *
 from .context import ServerBuilderRuntime
 
@@ -26,9 +27,7 @@ class ServerBuilderCommonService:
         cache_key = f"text::{url}"
         if cache_key in self.runtime.network_cache:
             return self.runtime.network_cache[cache_key]
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            text = resp.read().decode("utf-8", errors="ignore")
+        text = http_get_text(url, self.runtime.download_source, timeout=30)
         self.runtime.network_cache[cache_key] = text
         return text
 
@@ -36,22 +35,18 @@ class ServerBuilderCommonService:
         cache_key = f"json::{url}"
         if cache_key in self.runtime.network_cache:
             return self.runtime.network_cache[cache_key]
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        data = http_get_json(url, self.runtime.download_source, timeout=30)
         self.runtime.network_cache[cache_key] = data
         return data
 
-    def http_download(self, url: str, destination: Path) -> None:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            with destination.open("wb") as fp:
-                while True:
-                    chunk = resp.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    fp.write(chunk)
+    def http_download(self, url: str, destination: Path, reporter: Optional[DownloadStatsReporter] = None) -> None:
+        http_download(
+            url,
+            destination,
+            self.runtime.download_source,
+            reporter=reporter,
+            timeout=60,
+        )
 
     def get_application_dir(self) -> Path:
         base = Path(sys.executable if getattr(sys, "frozen", False) else __file__)

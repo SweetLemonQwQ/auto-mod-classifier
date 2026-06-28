@@ -1,4 +1,5 @@
 from .common import *
+from ..download_support import build_idle_download_status_text
 from ..tasks import run_mod_task, run_server_task
 from .dialogs import ChecklistDialog, VersionSelectionDialog
 from ..infrastructure.importers import cleanup_stale_import_workspaces
@@ -225,11 +226,13 @@ class App:
         status_var = tk.StringVar(value="请选择 mods 目录、客户端目录或整合包。")
         progress_var = tk.DoubleVar(value=0)
         output_var = tk.StringVar(value="尚未运行")
+        download_var = tk.StringVar(value=build_idle_download_status_text())
 
         middle = ttk.LabelFrame(parent, text="进度", padding=12)
         middle.pack(fill="x", pady=(12, 0))
         ttk.Label(middle, textvariable=status_var).pack(anchor="w")
         ttk.Progressbar(middle, variable=progress_var, maximum=100).pack(fill="x", pady=(8, 0))
+        ttk.Label(middle, textvariable=download_var, foreground="#555").pack(anchor="w", pady=(8, 0))
         ttk.Label(middle, textvariable=output_var, foreground="#555").pack(anchor="w", pady=(8, 0))
 
         log_box = ttk.LabelFrame(parent, text="日志", padding=12)
@@ -242,7 +245,13 @@ class App:
         ttk.Button(bottom, text="打开结果目录", command=lambda: self.open_panel_path("mod", "result")).pack(side="left")
         ttk.Button(bottom, text="退出", command=self.root.destroy).pack(side="right")
 
-        return PanelState(status_var=status_var, progress_var=progress_var, output_var=output_var, log_widget=log_widget)
+        return PanelState(
+            status_var=status_var,
+            progress_var=progress_var,
+            output_var=output_var,
+            download_var=download_var,
+            log_widget=log_widget,
+        )
 
     def build_server_tab(self, parent: ttk.Frame) -> PanelState:
         client_box = ttk.LabelFrame(parent, text="客户端实例目录或整合包", padding=12)
@@ -277,11 +286,13 @@ class App:
         status_var = tk.StringVar(value="请选择客户端目录或整合包，再选择新的空服务端目录。")
         progress_var = tk.DoubleVar(value=0)
         output_var = tk.StringVar(value="尚未运行")
+        download_var = tk.StringVar(value=build_idle_download_status_text())
 
         middle = ttk.LabelFrame(parent, text="进度", padding=12)
         middle.pack(fill="x", pady=(12, 0))
         ttk.Label(middle, textvariable=status_var).pack(anchor="w")
         ttk.Progressbar(middle, variable=progress_var, maximum=100).pack(fill="x", pady=(8, 0))
+        ttk.Label(middle, textvariable=download_var, foreground="#555").pack(anchor="w", pady=(8, 0))
         ttk.Label(middle, textvariable=output_var, foreground="#555").pack(anchor="w", pady=(8, 0))
 
         log_box = ttk.LabelFrame(parent, text="日志", padding=12)
@@ -295,7 +306,13 @@ class App:
         ttk.Button(bottom, text="打开日志目录", command=lambda: self.open_panel_path("server", "extra")).pack(side="left", padx=(8, 0))
         ttk.Button(bottom, text="退出", command=self.root.destroy).pack(side="right")
 
-        return PanelState(status_var=status_var, progress_var=progress_var, output_var=output_var, log_widget=log_widget)
+        return PanelState(
+            status_var=status_var,
+            progress_var=progress_var,
+            output_var=output_var,
+            download_var=download_var,
+            log_widget=log_widget,
+        )
 
     def choose_mod_folder(self) -> None:
         selected = filedialog.askdirectory(title="选择 mods 目录")
@@ -333,8 +350,20 @@ class App:
         panel.log_widget.delete("1.0", "end")
         panel.progress_var.set(0)
         panel.output_var.set("运行中")
+        panel.download_var.set(build_idle_download_status_text())
         panel.result_dir = None
         panel.extra_dir = None
+
+    def validate_source_path(self, path: Path, target_name: str) -> bool:
+        if path.is_dir():
+            return True
+        if path.is_file() and path.suffix.lower() in {".zip", ".mrpack"}:
+            return True
+        if path.is_file():
+            messagebox.showerror(APP_TITLE, f"{target_name}当前只支持目录、.zip 和 .mrpack 文件。")
+            return False
+        messagebox.showerror(APP_TITLE, f"{target_name}不存在。")
+        return False
 
     def start_mod_task(self) -> None:
         if self.worker_thread and self.worker_thread.is_alive():
@@ -351,6 +380,8 @@ class App:
         path = Path(mods_path)
         if not path.exists():
             messagebox.showerror(APP_TITLE, "所选目录或整合包不存在。")
+            return
+        if not self.validate_source_path(path, "Mod筛选输入源"):
             return
 
         self.clear_panel("mod")
@@ -393,6 +424,8 @@ class App:
         client_path = Path(client_dir)
         if not client_path.exists():
             messagebox.showerror(APP_TITLE, "所选客户端目录或整合包不存在。")
+            return
+        if not self.validate_source_path(client_path, "一键开服输入源"):
             return
 
         self.clear_panel("server")
@@ -471,12 +504,15 @@ class App:
                 panel.progress_var.set(payload)
             elif kind == "output":
                 panel.output_var.set(payload)
+            elif kind == "download-stats":
+                panel.download_var.set(payload)
             elif kind == "done":
                 panel.result_dir = payload.get("result_dir")
                 panel.extra_dir = payload.get("extra_dir")
                 panel.status_var.set(payload["status"])
                 panel.progress_var.set(100)
                 panel.output_var.set(payload["output"])
+                panel.download_var.set(build_idle_download_status_text())
                 if payload.get("summary"):
                     self.append_log(panel_key, "")
                     self.append_log(panel_key, payload["summary"])
@@ -484,6 +520,7 @@ class App:
             elif kind == "error":
                 panel.status_var.set("运行失败")
                 panel.output_var.set("失败")
+                panel.download_var.set(build_idle_download_status_text())
                 self.append_log(panel_key, payload)
                 messagebox.showerror(APP_TITLE, payload)
             elif kind == "ui-request":
