@@ -130,6 +130,11 @@ class App(FluentWindow):
         self.addSubInterface(self.server_page, FIF.COMMAND_PROMPT, "一键开服")
         self.addSubInterface(self.report_page, FIF.DOCUMENT, "结果报告")
         self.addSubInterface(self.settings_page, FIF.SETTING, "设置", position=NavigationItemPosition.BOTTOM)
+
+        # 固定导航栏宽度，消除展开/收起导致的页面抖动
+        self.navigationInterface.setExpandWidth(300)
+        self.navigationInterface.setCollapsible(False)
+
         self.open_page(self.home_page)
 
     def _require_mod_inputs(self) -> ModInputWidgets:
@@ -149,6 +154,11 @@ class App(FluentWindow):
         scroll_to_top = getattr(page, "scroll_to_top", None)
         if callable(scroll_to_top):
             scroll_to_top()
+
+    def on_theme_changed(self, index: int) -> None:
+        theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
+        theme = theme_map.get(index, Theme.DARK)
+        setTheme(theme)
 
     def choose_mod_folder(self) -> None:
         selected = QFileDialog.getExistingDirectory(self, "选择 mods 目录")

@@ -155,6 +155,7 @@ class QtPageFactory:
             if code == current:
                 combo.setCurrentIndex(combo.count() - 1)
         apply_input_style(combo)
+        combo.setMaxVisibleItems(8)
         return combo
 
     def _add_control_row(
@@ -524,7 +525,7 @@ class QtPageFactory:
         )
         left_col, left_layout, right_col, right_layout = self._build_task_workspace(page)
 
-        # — 左侧：输入与设置 —
+        # — 左侧：输入 → 选项 → 进度 —
         src_card, src_gl = self._create_card("输入源", "选择目录或整合包文件。", variant="subtle")
         src_card.setParent(left_col)
         src_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
@@ -550,27 +551,7 @@ class QtPageFactory:
         stn_btn.clicked.connect(lambda: self.app.open_page(self.app.settings_page))
         opt_gl.addWidget(stn_btn, 0, Qt.AlignLeft)
 
-        start_btn = PrimaryPushButton("开始筛选", left_col)
-        start_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        start_btn.clicked.connect(self.app.start_mod_task)
-
-        left_layout.addWidget(src_card)
-        left_layout.addWidget(opt_card)
-        left_layout.addStretch(1)
-        left_layout.addWidget(start_btn)
-
-        # — 右侧：状态 + 阶段 + 日志 —
-        (
-            sc, msd, msl, mstat, mpb, mdl, mol, mrb, _mrp,
-        ) = self._build_status_card(
-            "运行状态", "选择输入源后开始筛选。",
-            "打开结果目录",
-            lambda: self.app.open_panel_path("mod", "result"),
-            lambda: self.app.open_page(self.app.report_page),
-            parent=right_col,
-        )
-        right_layout.addWidget(sc, 2)
-
+        # 进度 + 指标（放在左侧，填充原本空白区域）
         board = StageBoard(
             "筛选进度",
             [
@@ -579,11 +560,8 @@ class QtPageFactory:
                 ("second-pass", "补查确认"),
                 ("complete", "完成"),
             ],
-            right_col,
+            left_col,
         )
-        right_layout.addWidget(board, 3)
-
-        # 指标行（放在 StageBoard 内部）
         metric_row = QHBoxLayout()
         metric_row.setSpacing(SPACING_SM)
         mk = MetricCard("服务端保留", "--", "可留在服务端", accent_color=INFO_COLOR)
@@ -596,7 +574,27 @@ class QtPageFactory:
         if isinstance(bl, QVBoxLayout):
             bl.addLayout(metric_row)
 
-        # 结果与日志
+        start_btn = PrimaryPushButton("开始筛选", left_col)
+        start_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        start_btn.clicked.connect(self.app.start_mod_task)
+
+        left_layout.addWidget(src_card)
+        left_layout.addWidget(opt_card)
+        left_layout.addWidget(board, 3)
+        left_layout.addWidget(start_btn)
+
+        # — 右侧：状态 + 日志（扩大日志区域）—
+        (
+            sc, msd, msl, mstat, mpb, mdl, mol, mrb, _mrp,
+        ) = self._build_status_card(
+            "运行状态", "选择输入源后开始筛选。",
+            "打开结果目录",
+            lambda: self.app.open_panel_path("mod", "result"),
+            lambda: self.app.open_page(self.app.report_page),
+            parent=right_col,
+        )
+        right_layout.addWidget(sc, 1)
+
         prev_card, prev_gl = self._create_card("结果与日志")
         prev_card.setParent(right_col)
         result_pg, mod_summary, mod_log, mod_table, mod_hint = self._build_log_pages(
@@ -611,7 +609,7 @@ class QtPageFactory:
             ],
         )
         prev_gl.addWidget(tab_host)
-        right_layout.addWidget(prev_card, 5)
+        right_layout.addWidget(prev_card, 8)
 
         assert mod_table is not None
         assert mod_hint is not None
@@ -687,6 +685,20 @@ class QtPageFactory:
         stn_btn.clicked.connect(lambda: self.app.open_page(self.app.settings_page))
         opt_gl.addWidget(stn_btn, 0, Qt.AlignLeft)
 
+        # 进度放在左侧，填充空白
+        board = StageBoard(
+            "开服阶段",
+            [
+                ("scan", "识别客户端"),
+                ("precheck", "匹配 Java"),
+                ("installer", "下载安装器"),
+                ("install", "安装服务端"),
+                ("classify", "筛选模组"),
+                ("verify", "启动验证"),
+            ],
+            left_col,
+        )
+
         start_btn = PrimaryPushButton("开始制作", left_col)
         start_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         start_btn.clicked.connect(self.app.start_server_task)
@@ -694,7 +706,7 @@ class QtPageFactory:
         left_layout.addWidget(src_card)
         left_layout.addWidget(out_card)
         left_layout.addWidget(opt_card)
-        left_layout.addStretch(1)
+        left_layout.addWidget(board, 3)
         left_layout.addWidget(start_btn)
 
         (
@@ -706,21 +718,7 @@ class QtPageFactory:
             lambda: self.app.open_page(self.app.report_page),
             parent=right_col,
         )
-        right_layout.addWidget(sc, 2)
-
-        board = StageBoard(
-            "开服阶段",
-            [
-                ("scan", "识别客户端"),
-                ("precheck", "匹配 Java"),
-                ("installer", "下载安装器"),
-                ("install", "安装服务端"),
-                ("classify", "筛选模组"),
-                ("verify", "启动验证"),
-            ],
-            right_col,
-        )
-        right_layout.addWidget(board, 3)
+        right_layout.addWidget(sc, 1)
 
         prev_card, prev_gl = self._create_card("摘要与日志")
         prev_card.setParent(right_col)
@@ -735,7 +733,7 @@ class QtPageFactory:
             ],
         )
         prev_gl.addWidget(tab_host)
-        right_layout.addWidget(prev_card, 5)
+        right_layout.addWidget(prev_card, 8)
 
         # 额外按钮：打开日志目录
         extra_btn = PushButton("打开日志目录", sc)
@@ -772,7 +770,6 @@ class QtPageFactory:
                 output_path_edit=srv_out_edit,
             ),
         )
-
     # ═══════════════════════════════════════════
     # 结果报告
     # ═══════════════════════════════════════════
@@ -949,6 +946,7 @@ class QtPageFactory:
         for t in ("自动匹配", "优先使用本机 Java", "只使用客户端自带 Java"):
             jv_rule.addItem(t)
         apply_input_style(jv_rule)
+        jv_rule.setMaxVisibleItems(3)
         self._add_control_row(s_l, "Java 方式", jv_rule)
 
         # 缓存
@@ -971,14 +969,18 @@ class QtPageFactory:
         i_card, i_l = self._create_card("界面设置")
         i_l.setSpacing(SPACING_SM)
         th_co = ComboBox(i_card)
-        for t in ("深色模式", "浅色模式"):
+        for t in ("深色", "浅色", "跟随系统"):
             th_co.addItem(t)
         apply_input_style(th_co)
+        th_co.setMaxVisibleItems(3)
+        th_co.setCurrentIndex(0)
+        th_co.currentIndexChanged.connect(self.app.on_theme_changed)
         self._add_control_row(i_l, "主题", th_co)
         sc_co = ComboBox(i_card)
         for t in ("100%", "110%", "125%"):
             sc_co.addItem(t)
         apply_input_style(sc_co)
+        sc_co.setMaxVisibleItems(3)
         self._add_control_row(i_l, "缩放比例", sc_co)
         dl_cb = CheckBox("显示详细日志", i_card)
         dl_cb.setChecked(True)

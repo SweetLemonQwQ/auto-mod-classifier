@@ -243,7 +243,17 @@ def build_window_stylesheet() -> str:
         border: 1px solid {BORDER_STRONG};
         border-radius: {RADIUS_MD}px;
         selection-background-color: {ACCENT_BG_MEDIUM};
+        selection-color: {TEXT_PRIMARY};
         padding: 4px;
+        outline: none;
+    }}
+    ComboBox QAbstractItemView::item {{
+        min-height: 30px;
+        padding: 4px 8px;
+        color: {TEXT_SECONDARY};
+    }}
+    ComboBox QAbstractItemView::item:selected {{
+        color: {TEXT_PRIMARY};
     }}
 
     /* ── 复选框 ── */
