@@ -84,6 +84,14 @@ class App(FluentWindow):
         self.setMinimumSize(1040, 600)
         self._resize_to_available_screen()
         self.setAcceptDrops(True)
+        # 关键：FluentWidget 在 Windows 11 上默认启用 mica effect。一旦启用，
+        # _normalBackgroundColor() 会返回透明，把背景让给 Windows 系统 mica。
+        # 而 mica 颜色跟随系统主题（而不是应用主题），会覆盖我们 QSS 设的窗口底色。
+        # 禁用 mica 后，_normalBackgroundColor() 才会返回 _darkBackgroundColor/_lightBackgroundColor。
+        self.setMicaEffectEnabled(False)
+        # 主动设置窗口底色：FluentWindow 的 paintEvent 会自己画一个浅/深纯色背景，
+        # 必须用 setCustomBackgroundColor 让它跟我们的调色板走
+        self.setCustomBackgroundColor(QColor("#F4F6FA"), QColor("#0D1119"))
         if APP_ICON_PATH.exists():
             self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         self.setStyleSheet(build_window_stylesheet())
@@ -161,24 +169,26 @@ class App(FluentWindow):
         from qfluentwidgets import qconfig
         theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
         theme = theme_map.get(index, Theme.DARK)
-        # 1) 先调 qfluentwidgets setTheme，让内置组件（侧边栏/导航/标题栏）先刷一遍
-        #    AUTO 模式下 qfluentwidgets 会跟随系统，需要在它解析完后从 qconfig.theme
-        #    读出实际生效主题，再据此切换自定义 palette。
-        setTheme(theme)
-        # 2) 同步切换自定义 palette
-        #    qconfig.theme 才是当前实际生效（已解析 AUTO 跟随系统后的最终主题）
-        resolved_theme = qconfig.theme
-        if resolved_theme == Theme.LIGHT:
-            palette_name = "light"
-        else:
-            palette_name = "dark"
+        # 1) 同步切换自定义 palette（背景/卡片/边框/文字/卡片悬浮等）
+        palette_name = {Theme.DARK: "dark", Theme.LIGHT: "light"}.get(theme, "dark")
         from . import qt_theme as _qt_theme
         _qt_theme.set_palette(palette_name)
-        # 3) 重新生成主窗口全局 QSS（背景、QMenu、按钮、输入框、表格等大块色值都靠它）
+        # 2) 重新生成主窗口全局 QSS（背景、QMenu、按钮、输入框、表格等大块色值都靠它）
         self.setStyleSheet(build_window_stylesheet())
-        # 4) 重设所有已通过 apply_themed_style 注册的子 widget 样式
+        # 3) 强制让 FluentWindow 的 paintEvent 用我们调色板的底色。
+        #    BackgroundAnimationWidget 监听 qconfig.themeChanged 调 _updateBackgroundColor，
+        #    但它读的是 isDarkTheme()（看 qconfig.theme），不是我们自己的 palette。
+        #    AUTO 模式下 qconfig.theme 会是 LIGHT/DARK，行为和 setTheme 一致。
+        #    但 setCustomBackgroundColor 必须在 setStyleSheet 之后调，且要在 qconfig.themeChanged
+        #    信号真正触发动画 _结束_ 之前，让 backgroundColor 切到对的色。
+        light_bg = QColor("#F4F6FA")
+        dark_bg = QColor("#0D1119")
+        self.setCustomBackgroundColor(light_bg, dark_bg)
+        # 4) 再调 qfluentwidgets setTheme，让内置组件（侧边栏/导航/标题栏）刷一遍
+        setTheme(theme)
+        # 5) 重设所有已通过 apply_themed_style 注册的子 widget 样式
         refresh_themed_styles()
-        # 5) 强制刷新整个 widget tree，让所有控件重新应用样式
+        # 6) 强制刷新整个 widget tree，让所有控件重新应用样式
         # 注意：只对 visible widget 调 polish，避免对离屏/隐藏 widget 触发昂贵的 layout pass
         self.style().unpolish(self)
         self.style().polish(self)
