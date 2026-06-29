@@ -20,31 +20,33 @@ APP_ICON_PATH = PROJECT_ROOT / "自动筛选模组分类器.ico"
 # 这样每次访问才会拿到当前主题值。
 _PALETTES: dict[str, dict[str, str]] = {
     "dark": {
-        "BG_DEEP": "#090C12",
-        "BG_SIDEBAR": "#0B0F16",
-        "BG_CONTENT": "#0D1119",
-        "SURFACE_CARD": "#131926",
-        "SURFACE_ELEVATED": "#181F30",
-        "SURFACE_INPUT": "#1B2338",
-        "SURFACE_DIMMED": "#101520",
-        "BORDER_SUBTLE": "rgba(255, 255, 255, 0.04)",
-        "BORDER_DEFAULT": "rgba(255, 255, 255, 0.06)",
-        "BORDER_STRONG": "rgba(255, 255, 255, 0.09)",
-        "BORDER_FOCUS": "rgba(61, 214, 140, 0.35)",
-        "BORDER_COLOR": "#2A3350",
-        "WEAK_BORDER_COLOR": "rgba(255, 255, 255, 0.05)",
+        # 背景分层：让卡片从内容区"浮起来"，通过 ~5-8% 亮度差 + 可见边框实现
+        "BG_DEEP": "#08090E",        # 窗口最深底色（任务栏/系统层）
+        "BG_SIDEBAR": "#0E1117",     # 侧边导航背景（比内容区深一点）
+        "BG_CONTENT": "#0D1119",     # 主内容区背景
+        "SURFACE_CARD": "#161E2C",    # 卡片底色（明显比内容区亮，让卡片浮起）
+        "SURFACE_ELEVATED": "#1C2438",# 悬浮/高亮卡片
+        "SURFACE_INPUT": "#1F2740",   # 输入控件底色（比卡片再亮一点）
+        "SURFACE_DIMMED": "#11151E",  # 减弱区域
+        # 边框：可见度比之前强一档，让卡片边缘清晰
+        "BORDER_SUBTLE": "rgba(255, 255, 255, 0.06)",
+        "BORDER_DEFAULT": "rgba(255, 255, 255, 0.10)",
+        "BORDER_STRONG": "rgba(255, 255, 255, 0.16)",
+        "BORDER_FOCUS": "rgba(61, 214, 140, 0.45)",
+        "BORDER_COLOR": "#2F384F",
+        "WEAK_BORDER_COLOR": "rgba(255, 255, 255, 0.06)",
         "TEXT_PRIMARY": "#E3E6ED",
-        "TEXT_SECONDARY": "#99A1B3",
-        "TEXT_MUTED": "#656E80",
-        "TEXT_DISABLED": "#3E4555",
+        "TEXT_SECONDARY": "#9BA3B5",  # 比 #99A1B3 稍亮一档，更耐看
+        "TEXT_MUTED": "#717A8C",      # 比 #656E80 稍亮一点
+        "TEXT_DISABLED": "#454C5A",
         # 旧名兼容
         "BG_COLOR": "#0D1119",
-        "SURFACE_COLOR": "#131926",
-        "SURFACE_ALT_COLOR": "#1B2338",
-        "SURFACE_HERO_COLOR": "#181F30",
+        "SURFACE_COLOR": "#161E2C",
+        "SURFACE_ALT_COLOR": "#1F2740",
+        "SURFACE_HERO_COLOR": "#1C2438",
         "TEXT_COLOR": "#E3E6ED",
-        "SECONDARY_TEXT_COLOR": "#99A1B3",
-        "MUTED_TEXT_COLOR": "#656E80",
+        "SECONDARY_TEXT_COLOR": "#9BA3B5",
+        "MUTED_TEXT_COLOR": "#717A8C",
     },
     "light": {
         "BG_DEEP": "#E6EAF0",
@@ -76,26 +78,26 @@ _PALETTES: dict[str, dict[str, str]] = {
 
 # 主题切换辅助色：浅色主题下按钮/输入框的 hover/pressed 背景需要更浅的灰阶
 # dark 主题用了 hard-coded `#232D42` / `#1B2335` / `#1E283A` 等。这里也按主题区分。
-_PALETTES["dark"]["BUTTON_HOVER_BG"] = "#232D42"
-_PALETTES["dark"]["BUTTON_PRESSED_BG"] = "#1B2335"
-_PALETTES["dark"]["INPUT_FOCUS_BG"] = "#1E283A"
-_PALETTES["dark"]["BUTTON_DISABLED_BG"] = "rgba(27, 35, 56, 0.5)"
-_PALETTES["dark"]["EDITOR_BG"] = "#0C131F"
-_PALETTES["dark"]["TABLE_HEADER_BG"] = "#151D2C"
-_PALETTES["dark"]["TABLE_ROW_BG"] = "#101826"
-_PALETTES["dark"]["SCROLL_HANDLE_BG"] = "rgba(153, 161, 179, 0.15)"
-_PALETTES["dark"]["SCROLL_HANDLE_HOVER_BG"] = "rgba(153, 161, 179, 0.28)"
-_PALETTES["dark"]["MENU_BG"] = "#161E2E"
-_PALETTES["dark"]["COMBO_POPUP_BG"] = "#161E2E"
-_PALETTES["dark"]["HOVER_BORDER"] = "rgba(255, 255, 255, 0.10)"
-_PALETTES["dark"]["WARNING_BORDER"] = "rgba(245, 166, 35, 0.15)"
-_PALETTES["dark"]["WARNING_BG_HOVER"] = "rgba(245, 166, 35, 0.14)"
-_PALETTES["dark"]["WARNING_BORDER_HOVER"] = "rgba(245, 166, 35, 0.25)"
+_PALETTES["dark"]["BUTTON_HOVER_BG"] = "#29334A"      # 比 SURFACE_INPUT #1F2740 再亮一档
+_PALETTES["dark"]["BUTTON_PRESSED_BG"] = "#1F2740"     # 回到 SURFACE_INPUT
+_PALETTES["dark"]["INPUT_FOCUS_BG"] = "#232C46"        # 比 hover 略深，与卡片区分
+_PALETTES["dark"]["BUTTON_DISABLED_BG"] = "rgba(31, 39, 64, 0.5)"
+_PALETTES["dark"]["EDITOR_BG"] = "#11172A"            # 比内容区略深，让代码/日志区有"凹陷"感
+_PALETTES["dark"]["TABLE_HEADER_BG"] = "#1A2336"       # 比卡片略深
+_PALETTES["dark"]["TABLE_ROW_BG"] = "#131A2A"          # 比 header 略深
+_PALETTES["dark"]["SCROLL_HANDLE_BG"] = "rgba(155, 163, 181, 0.18)"
+_PALETTES["dark"]["SCROLL_HANDLE_HOVER_BG"] = "rgba(155, 163, 181, 0.32)"
+_PALETTES["dark"]["MENU_BG"] = "#161E2C"               # 菜单背景 = 卡片色
+_PALETTES["dark"]["COMBO_POPUP_BG"] = "#161E2C"
+_PALETTES["dark"]["HOVER_BORDER"] = "rgba(255, 255, 255, 0.18)"  # hover 边框更明显
+_PALETTES["dark"]["WARNING_BORDER"] = "rgba(245, 166, 35, 0.20)"
+_PALETTES["dark"]["WARNING_BG_HOVER"] = "rgba(245, 166, 35, 0.16)"
+_PALETTES["dark"]["WARNING_BORDER_HOVER"] = "rgba(245, 166, 35, 0.30)"
 _PALETTES["dark"]["PRIMARY_TEXT"] = "#0A1F16"
 _PALETTES["dark"]["PRIMARY_TEXT_DISABLED"] = "rgba(10, 31, 22, 0.35)"
-_PALETTES["dark"]["ACCENT_BORDER"] = "rgba(61, 214, 140, 0.12)"
-_PALETTES["dark"]["ACCENT_BORDER_HOVER"] = "rgba(61, 214, 140, 0.22)"
-_PALETTES["dark"]["SOFT_BORDER"] = "rgba(61, 214, 140, 0.10)"
+_PALETTES["dark"]["ACCENT_BORDER"] = "rgba(61, 214, 140, 0.18)"
+_PALETTES["dark"]["ACCENT_BORDER_HOVER"] = "rgba(61, 214, 140, 0.28)"
+_PALETTES["dark"]["SOFT_BORDER"] = "rgba(61, 214, 140, 0.14)"
 
 _PALETTES["light"]["BUTTON_HOVER_BG"] = "#E9EDF2"
 _PALETTES["light"]["BUTTON_PRESSED_BG"] = "#DDE2EA"

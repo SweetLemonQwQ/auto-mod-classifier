@@ -84,7 +84,6 @@ class App(FluentWindow):
         self.setMinimumSize(1040, 600)
         self._resize_to_available_screen()
         self.setAcceptDrops(True)
-        self.setMicaEffectEnabled(False)
         if APP_ICON_PATH.exists():
             self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         self.setStyleSheet(build_window_stylesheet())
@@ -131,7 +130,10 @@ class App(FluentWindow):
         self.addSubInterface(self.report_page, FIF.DOCUMENT, "结果报告")
         self.addSubInterface(self.settings_page, FIF.SETTING, "设置", position=NavigationItemPosition.BOTTOM)
 
-        # 固定导航栏宽度，消除展开/收起导致的页面抖动
+        # 禁用 FluentWindow 内部的页面切换弹出动画（"下方弹出 + OutQuad" 会闪一下），
+        # 直接瞬切更干净。所有"用 setCurrentWidget 切换页面"的代码会自动走这条路径。
+        self.stackedWidget.setAnimationEnabled(False)
+        # 固定导航栏宽度，禁用折叠
         self.navigationInterface.setExpandWidth(300)
         self.navigationInterface.setCollapsible(False)
 
@@ -156,14 +158,22 @@ class App(FluentWindow):
             scroll_to_top()
 
     def on_theme_changed(self, index: int) -> None:
+        from qfluentwidgets import qconfig
         theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
         theme = theme_map.get(index, Theme.DARK)
-        # 1) 同步切换自定义 palette
-        palette_name = {Theme.DARK: "dark", Theme.LIGHT: "light"}.get(theme, "dark")
+        # 1) 先调 qfluentwidgets setTheme，让内置组件（侧边栏/导航/标题栏）先刷一遍
+        #    AUTO 模式下 qfluentwidgets 会跟随系统，需要在它解析完后从 qconfig.theme
+        #    读出实际生效主题，再据此切换自定义 palette。
+        setTheme(theme)
+        # 2) 同步切换自定义 palette
+        #    qconfig.theme 才是当前实际生效（已解析 AUTO 跟随系统后的最终主题）
+        resolved_theme = qconfig.theme
+        if resolved_theme == Theme.LIGHT:
+            palette_name = "light"
+        else:
+            palette_name = "dark"
         from . import qt_theme as _qt_theme
         _qt_theme.set_palette(palette_name)
-        # 2) 先调 qfluentwidgets setTheme，让内置组件（侧边栏/导航/标题栏）先刷一遍
-        setTheme(theme)
         # 3) 重新生成主窗口全局 QSS（背景、QMenu、按钮、输入框、表格等大块色值都靠它）
         self.setStyleSheet(build_window_stylesheet())
         # 4) 重设所有已通过 apply_themed_style 注册的子 widget 样式
