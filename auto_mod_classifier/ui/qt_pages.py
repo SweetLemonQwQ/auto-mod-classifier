@@ -991,12 +991,6 @@ class QtPageFactory:
         an_cb.setChecked(True)
         i_l.addWidget(dl_cb)
         i_l.addWidget(an_cb)
-        save_btn = PrimaryPushButton("保存设置", i_card)
-        save_btn.clicked.connect(self.app.save_settings)
-        i_l.addWidget(save_btn, 0, Qt.AlignLeft)
-        reset_btn = PushButton("恢复默认", i_card)
-        reset_btn.clicked.connect(self.app.reset_settings)
-        i_l.addWidget(reset_btn, 0, Qt.AlignLeft)
 
         # 关于
         a_card, a_l = self._create_card("关于", variant="subtle")
@@ -1006,12 +1000,28 @@ class QtPageFactory:
         apply_label_tone(ver, muted=True, size=FONT_SIZE_XS)
         a_l.addWidget(ver)
 
+        action_bar = QWidget(page)
+        action_layout = QHBoxLayout(action_bar)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(SPACING_SM)
+        action_hint = BodyLabel("修改后点击保存，下次启动会继续使用当前设置。", action_bar)
+        apply_label_tone(action_hint, muted=True, size=FONT_SIZE_XS)
+        action_layout.addWidget(action_hint)
+        action_layout.addStretch(1)
+        reset_btn = PushButton("恢复默认", action_bar)
+        reset_btn.clicked.connect(self.app.reset_settings)
+        action_layout.addWidget(reset_btn)
+        save_btn = PrimaryPushButton("保存设置", action_bar)
+        save_btn.clicked.connect(self.app.save_settings)
+        action_layout.addWidget(save_btn)
+
         gl.addWidget(f_card, 0, 0)
         gl.addWidget(s_card, 0, 1)
         gl.addWidget(c_card, 1, 0)
         gl.addWidget(i_card, 1, 1)
         gl.addWidget(a_card, 2, 0, 1, 2)
         page.container_layout.addWidget(grid)
+        page.container_layout.addWidget(action_bar)
         page.container_layout.addStretch(1)
 
         return SettingsPageBuild(
