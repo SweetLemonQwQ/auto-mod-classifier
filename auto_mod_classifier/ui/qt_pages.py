@@ -26,7 +26,7 @@ from qfluentwidgets import (
 )
 
 from ..download_support import build_idle_download_status_text
-from ..shared import DOWNLOAD_SOURCE_OPTIONS, DOWNLOAD_SOURCE_SMART
+from ..shared import DOWNLOAD_SOURCE_OPTIONS, DOWNLOAD_SOURCE_SMART, SERVER_BOOT_TIMEOUT_MODE_OPTIONS
 from .qt_state import (
     HomeWidgets,
     ModInputWidgets,
