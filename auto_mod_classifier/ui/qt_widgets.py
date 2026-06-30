@@ -346,7 +346,7 @@ class StageBoard(QFrame):
             self.detail_label,
             lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;",
         )
-        layout.addWidget(self.detail_label)
+        self.detail_label.hide()
         self.reset()
 
     def reset(self) -> None:
