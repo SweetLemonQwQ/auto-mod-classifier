@@ -40,6 +40,7 @@ from ..shared import (
     MOD_REPORT_BASENAME,
     ModTaskOptions,
     ReviewItem,
+    SERVER_BOOT_TIMEOUT_SMART,
     ServerTaskOptions,
     TaskStage,
     VersionCandidate,
@@ -64,6 +65,7 @@ DEFAULT_UI_SETTINGS: Dict[str, Any] = {
     "server_download_source": DOWNLOAD_SOURCE_SMART,
     "java_rule_index": 0,
     "auto_download_java": True,
+    "server_boot_timeout_mode": SERVER_BOOT_TIMEOUT_SMART,
     "cache_path": "",
     "cache_auto_cleanup": True,
     "theme_index": 0,
@@ -258,6 +260,10 @@ class App(FluentWindow):
         java_rule_index = int(data.get("java_rule_index", 0))
         settings_widgets.java_rule_combo.setCurrentIndex(max(0, min(java_rule_index, settings_widgets.java_rule_combo.count() - 1)))
         settings_widgets.auto_download_java_checkbox.setChecked(bool(data.get("auto_download_java", True)))
+        self._set_combo_by_data(
+            settings_widgets.server_boot_timeout_combo,
+            str(data.get("server_boot_timeout_mode", SERVER_BOOT_TIMEOUT_SMART)),
+        )
         settings_widgets.cache_path_edit.setText(str(data.get("cache_path", "")))
         settings_widgets.cache_auto_cleanup_checkbox.setChecked(bool(data.get("cache_auto_cleanup", True)))
         theme_index = int(data.get("theme_index", 0))
@@ -278,6 +284,9 @@ class App(FluentWindow):
             "server_download_source": self.resolve_download_source(settings_widgets.server_download_source_combo),
             "java_rule_index": settings_widgets.java_rule_combo.currentIndex(),
             "auto_download_java": settings_widgets.auto_download_java_checkbox.isChecked(),
+            "server_boot_timeout_mode": str(
+                settings_widgets.server_boot_timeout_combo.currentData() or SERVER_BOOT_TIMEOUT_SMART
+            ),
             "cache_path": settings_widgets.cache_path_edit.text().strip(),
             "cache_auto_cleanup": settings_widgets.cache_auto_cleanup_checkbox.isChecked(),
             "theme_index": settings_widgets.theme_combo.currentIndex(),
@@ -530,6 +539,9 @@ class App(FluentWindow):
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
             enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
             auto_download_java=settings_widgets.auto_download_java_checkbox.isChecked(),
+            boot_timeout_mode=str(
+                settings_widgets.server_boot_timeout_combo.currentData() or SERVER_BOOT_TIMEOUT_SMART
+            ),
         )
         self.worker_thread = threading.Thread(
             target=run_server_task,
@@ -539,6 +551,7 @@ class App(FluentWindow):
                 self.set_runtime_ref,
                 self.request_version_choice,
                 self.request_checklist,
+                self.request_continue_wait,
             ),
             daemon=True,
         )
@@ -629,6 +642,20 @@ class App(FluentWindow):
         event.wait()
         return request["response"]
 
+    def request_continue_wait(self, title: str, message: str, seconds: int) -> bool:
+        event = threading.Event()
+        request = {
+            "kind": "continue-wait",
+            "title": title,
+            "message": message,
+            "seconds": seconds,
+            "event": event,
+            "response": False,
+        }
+        self.ui_queue.put({"panel": "server", "kind": "ui-request", "payload": request})
+        event.wait()
+        return bool(request["response"])
+
     def poll_queue(self) -> None:
         while True:
             try:
@@ -711,6 +738,15 @@ class App(FluentWindow):
                     dialog = ChecklistDialog(payload["title"], payload["message"], payload["items"], self)
                     dialog.exec()
                     payload["response"] = dialog.selected_keys
+                elif payload["kind"] == "continue-wait":
+                    result = QMessageBox.question(
+                        self,
+                        str(payload["title"]),
+                        str(payload["message"]),
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.Yes,
+                    )
+                    payload["response"] = result == QMessageBox.Yes
                 payload["event"].set()
 
         self._flush_pending_logs()

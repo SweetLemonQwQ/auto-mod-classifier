@@ -51,5 +51,6 @@ class ServerBuildService(Protocol):
         set_runtime_ref: Callable[[Any], None],
         request_version_choice: Callable[[list], Optional[Any]],
         request_checklist: Callable[[str, str, list], Optional[list]],
+        request_continue_wait: Callable[[str, str, int], bool],
     ) -> None:
         ...

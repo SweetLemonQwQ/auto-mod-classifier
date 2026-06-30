@@ -62,6 +62,16 @@ DOWNLOAD_SOURCE_OPTIONS = [
     (DOWNLOAD_SOURCE_BMCLAPI, "BMCLAPI 优先"),
     (DOWNLOAD_SOURCE_MCIM, "MCIM 优先"),
 ]
+SERVER_BOOT_TIMEOUT_STRICT = "strict"
+SERVER_BOOT_TIMEOUT_SMART = "smart"
+SERVER_BOOT_TIMEOUT_MODE_LABELS = {
+    SERVER_BOOT_TIMEOUT_STRICT: "固定 90 秒",
+    SERVER_BOOT_TIMEOUT_SMART: "智能等待",
+}
+SERVER_BOOT_TIMEOUT_MODE_OPTIONS = [
+    (SERVER_BOOT_TIMEOUT_SMART, "智能等待"),
+    (SERVER_BOOT_TIMEOUT_STRICT, "固定 90 秒"),
+]
 DEFAULT_SERVER_TIMEOUT_SECONDS = 90
 DEFAULT_SERVER_INIT_MAX_TIMEOUT_SECONDS = 240
 DEFAULT_SERVER_VERIFY_MAX_TIMEOUT_SECONDS = 480
@@ -298,6 +308,7 @@ class ServerTaskOptions:
     use_curseforge: bool
     enable_second_pass: bool
     auto_download_java: bool = True
+    boot_timeout_mode: str = SERVER_BOOT_TIMEOUT_SMART
 
 
 def get_classification_worker_count(total: int) -> int:

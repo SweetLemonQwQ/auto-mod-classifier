@@ -30,6 +30,7 @@ def _build_server_request(options: ServerTaskOptions) -> BuildServerRequest:
         use_curseforge=options.use_curseforge,
         enable_second_pass=options.enable_second_pass,
         auto_download_java=options.auto_download_java,
+        boot_timeout_mode=options.boot_timeout_mode,
     )
 
 
@@ -51,6 +52,7 @@ def run_server_task(
     set_runtime_ref: Callable[[Any], None],
     request_version_choice: Callable[[List[VersionCandidate]], Optional[VersionCandidate]],
     request_checklist: Callable[[str, str, List[ReviewItem]], Optional[List[str]]],
+    request_continue_wait: Callable[[str, str, int], bool],
     container: Optional[AppContainer] = None,
 ) -> None:
     # 这样做的好处是：以后换 Tk、Web、CLI 前端，任务入口都能复用。
@@ -62,4 +64,5 @@ def run_server_task(
         set_runtime_ref,
         request_version_choice,
         request_checklist,
+        request_continue_wait,
     )

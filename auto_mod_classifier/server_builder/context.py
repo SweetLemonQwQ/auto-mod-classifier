@@ -17,10 +17,12 @@ class ServerBuilderRuntime:
     emit_stage: Callable[[str, str], None]
     request_version_choice: Callable[[List[VersionCandidate]], Optional[VersionCandidate]]
     request_checklist: Callable[[str, str, List[ReviewItem]], Optional[List[str]]]
+    request_continue_wait: Callable[[str, str, int], bool]
     download_source: str
     use_mcmod: bool
     enable_second_pass: bool
     auto_download_java: bool
+    boot_timeout_mode: str
     prepared_version_candidates: List[VersionCandidate] = field(default_factory=list)
     # 下面这些是多个服务会共用的运行期状态，所以集中放在这里。
     network_cache: Dict[str, Any] = field(default_factory=dict)

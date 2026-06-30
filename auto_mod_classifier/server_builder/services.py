@@ -1073,9 +1073,22 @@ class ServerLaunchService:
 
     def get_server_boot_timeout_config(self, mode: str) -> Tuple[int, int]:
         """返回启动阶段的超时策略：(无新输出超时，总兜底超时)。"""
+        if self.runtime.boot_timeout_mode == SERVER_BOOT_TIMEOUT_STRICT:
+            return DEFAULT_SERVER_TIMEOUT_SECONDS, DEFAULT_SERVER_TIMEOUT_SECONDS
         if mode == "verify":
             return DEFAULT_SERVER_TIMEOUT_SECONDS, DEFAULT_SERVER_VERIFY_MAX_TIMEOUT_SECONDS
         return DEFAULT_SERVER_TIMEOUT_SECONDS, DEFAULT_SERVER_INIT_MAX_TIMEOUT_SECONDS
+
+    def should_continue_waiting(self, mode: str, idle_timeout_seconds: int) -> bool:
+        if self.runtime.boot_timeout_mode != SERVER_BOOT_TIMEOUT_SMART:
+            return False
+        extend_seconds = 120
+        phase_text = "首次启动" if mode == "init" else "验证启动"
+        return self.runtime.request_continue_wait(
+            f"{phase_text}较慢",
+            f"服务端可能仍在慢启动，已经连续 {idle_timeout_seconds} 秒没有新日志输出。\n\n要继续等待 {extend_seconds} 秒吗？",
+            extend_seconds,
+        )
 
     def run_server_script(self, output_root: Path, launch_script: Path, mode: str) -> None:
         launch_path = launch_script.resolve()
@@ -1177,6 +1190,11 @@ class ServerLaunchService:
                     if mode == "verify" and saw_success:
                         self.stop_process(process)
                         break
+                    if self.should_continue_waiting(mode, idle_timeout_seconds):
+                        last_output_at = time.time()
+                        max_timeout_seconds += 120
+                        self.common.log_line("已按你的选择继续等待 120 秒，仍会持续观察新的启动日志。")
+                        continue
                     subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, creationflags=SUBPROCESS_CREATIONFLAGS)
                     raise RuntimeError(
                         f"服务端{('首次启动' if mode == 'init' else '验证启动')}已连续 {idle_timeout_seconds} 秒没有新输出，判定为卡住。"

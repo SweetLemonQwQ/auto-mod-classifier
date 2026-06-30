@@ -26,10 +26,12 @@ class ServerBuilderCore:
         emit_stage: Callable[[str, str], None],
         request_version_choice: Callable[[List[VersionCandidate]], Optional[VersionCandidate]],
         request_checklist: Callable[[str, str, List[ReviewItem]], Optional[List[str]]],
+        request_continue_wait: Callable[[str, str, int], bool],
         download_source: str,
         use_mcmod: bool,
         enable_second_pass: bool,
         auto_download_java: bool,
+        boot_timeout_mode: str,
         prepared_version_candidates: Optional[List[VersionCandidate]] = None,
     ):
         # core 现在更像“装配中心”，而不是过去那种什么都自己干的大对象。
@@ -42,10 +44,12 @@ class ServerBuilderCore:
             emit_stage=emit_stage,
             request_version_choice=request_version_choice,
             request_checklist=request_checklist,
+            request_continue_wait=request_continue_wait,
             download_source=download_source,
             use_mcmod=use_mcmod,
             enable_second_pass=enable_second_pass,
             auto_download_java=auto_download_java,
+            boot_timeout_mode=boot_timeout_mode,
             prepared_version_candidates=list(prepared_version_candidates or []),
         )
         self.common = ServerBuilderCommonService(self.runtime)

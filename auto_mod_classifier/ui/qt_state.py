@@ -100,6 +100,7 @@ class SettingsWidgets:
     server_download_source_combo: ComboBox
     java_rule_combo: ComboBox
     auto_download_java_checkbox: CheckBox
+    server_boot_timeout_combo: ComboBox
     cache_path_edit: LineEdit
     cache_auto_cleanup_checkbox: CheckBox
     theme_combo: ComboBox

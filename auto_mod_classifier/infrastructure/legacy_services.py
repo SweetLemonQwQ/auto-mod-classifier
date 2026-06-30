@@ -187,6 +187,7 @@ class LegacyServerBuildService:
         set_runtime_ref: Callable[[Any], None],
         request_version_choice: Callable[[list], Optional[Any]],
         request_checklist: Callable[[str, str, list], Optional[list]],
+        request_continue_wait: Callable[[str, str, int], bool],
     ) -> None:
         classifier: Optional[ClassifierCore] = None
         try:
@@ -205,10 +206,12 @@ class LegacyServerBuildService:
                 emit_stage=lambda stage_key, detail: emit("stage", {"stage_key": stage_key, "detail": detail}),
                 request_version_choice=request_version_choice,
                 request_checklist=request_checklist,
+                request_continue_wait=request_continue_wait,
                 download_source=request.download_source,
                 use_mcmod=request.use_mcmod,
                 enable_second_pass=request.enable_second_pass,
                 auto_download_java=request.auto_download_java,
+                boot_timeout_mode=request.boot_timeout_mode,
                 prepared_version_candidates=source.version_candidates,
             )
             result = builder.build_server(source.client_dir, request.output_dir)

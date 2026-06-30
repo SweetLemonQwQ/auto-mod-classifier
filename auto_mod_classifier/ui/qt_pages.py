@@ -1014,6 +1014,17 @@ class QtPageFactory:
         auto_java_cb = CheckBox("找不到时自动下载 Java 到输出目录", s_card)
         auto_java_cb.setChecked(True)
         s_l.addWidget(auto_java_cb)
+        boot_timeout_combo = ComboBox(s_card)
+        for code, label in SERVER_BOOT_TIMEOUT_MODE_OPTIONS:
+            boot_timeout_combo.addItem(label, userData=code)
+        apply_input_style(boot_timeout_combo)
+        boot_timeout_combo.setMaxVisibleItems(4)
+        self._add_control_row(
+            s_l,
+            "启动超时",
+            boot_timeout_combo,
+            "智能等待：90 秒无新日志才判卡住，支持超时后继续等待 2 分钟；固定 90 秒：到时直接停止。",
+        )
 
         # 缓存
         c_card, c_l = self._create_card("缓存与存储")
@@ -1095,6 +1106,7 @@ class QtPageFactory:
                 server_download_source_combo=sv_dl,
                 java_rule_combo=jv_rule,
                 auto_download_java_checkbox=auto_java_cb,
+                server_boot_timeout_combo=boot_timeout_combo,
                 cache_path_edit=ca_edit,
                 cache_auto_cleanup_checkbox=ca_cb,
                 theme_combo=th_co,

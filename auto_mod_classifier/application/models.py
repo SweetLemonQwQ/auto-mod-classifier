@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
+from ..shared import SERVER_BOOT_TIMEOUT_SMART
+
 
 TaskEmitter = Callable[[str, Any], None]
 CleanupCallback = Callable[[], None]
@@ -36,6 +38,7 @@ class BuildServerRequest:
     use_curseforge: bool
     enable_second_pass: bool
     auto_download_java: bool = True
+    boot_timeout_mode: str = SERVER_BOOT_TIMEOUT_SMART
 
 
 @dataclass
