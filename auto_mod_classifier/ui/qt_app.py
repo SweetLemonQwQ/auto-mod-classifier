@@ -905,8 +905,12 @@ class App(FluentWindow):
         if panel_key is None:
             return
 
-        result_dir = section.result_dir
-        if not result_dir:
+        preview_dir = section.result_dir
+        if panel_key == "server" and section.extra_dir is not None:
+            # 一键开服的 CSV 报告写在报告目录，不在服务端根目录。
+            preview_dir = section.extra_dir
+
+        if not preview_dir:
             if section.preview_hint_label is not None:
                 if panel_key == "server":
                     section.preview_hint_label.setText("还没有开始一键开服。先运行一次脚本，完成后这里会自动显示真实结果。")
@@ -915,10 +919,10 @@ class App(FluentWindow):
             return
 
         csv_name = f"{MOD_REPORT_BASENAME}.csv" if panel_key == "server" else "分类报告.csv"
-        csv_path = result_dir / csv_name
+        csv_path = preview_dir / csv_name
         if not csv_path.exists():
             if section.preview_hint_label is not None:
-                section.preview_hint_label.setText(f"脚本已经执行过，但当前结果目录里没找到 `{csv_name}`，可以先打开结果目录检查导出是否完整。")
+                section.preview_hint_label.setText(f"脚本已经执行过，但当前预览目录里没找到 `{csv_name}`，可以先打开结果目录检查导出是否完整。")
             return
 
         try:
