@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QScrollBar,
     QSizePolicy,
-    QStackedWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -22,7 +21,6 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     BodyLabel,
     ScrollArea,
-    SegmentedWidget,
     StrongBodyLabel,
     TableWidget,
     TitleLabel,
@@ -499,33 +497,6 @@ class ActionCard(QFrame):
         self.button = PushButton(button_text, self)
         self.button.setObjectName("accentButton")
         layout.addWidget(self.button, 0, Qt.AlignLeft)
-
-
-def build_tab_host(
-    parent: QWidget, tabs: List[tuple[str, str, QWidget]]
-) -> tuple[QWidget, SegmentedWidget, QStackedWidget]:
-    host = QWidget(parent)
-    layout = QVBoxLayout(host)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(SPACING_SM)
-
-    segmented = SegmentedWidget(host)
-    stacked = QStackedWidget(host)
-    layout.addWidget(segmented, 0, Qt.AlignLeft)
-    layout.addWidget(stacked, 1)
-
-    for route_key, text, widget in tabs:
-        stacked.addWidget(widget)
-        segmented.addItem(
-            route_key, text, onClick=lambda w=widget: stacked.setCurrentWidget(w)
-        )
-
-    if tabs:
-        segmented.setCurrentItem(tabs[0][0])
-        stacked.setCurrentWidget(tabs[0][2])
-
-    return host, segmented, stacked
-
 
 def build_result_table(parent: QWidget) -> TableWidget:
     table = TableWidget(parent)

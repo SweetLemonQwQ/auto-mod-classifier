@@ -70,7 +70,6 @@ from .qt_widgets import (
     StatusDot,
     TaskPage,
     build_result_table,
-    build_tab_host,
     enable_filename_copy,
 )
 
@@ -602,20 +601,14 @@ class QtPageFactory:
         )
         right_layout.addWidget(sc, 1)
 
-        prev_card, prev_gl = self._create_card("结果与日志")
+        prev_card, prev_gl = self._create_card("实时日志", "只保留真实滚动日志，方便盯住当前进度。")
         prev_card.setParent(right_col)
-        result_pg, mod_summary, mod_log, mod_table, mod_hint = self._build_log_pages(
+        _, mod_summary, mod_log, mod_table, mod_hint = self._build_log_pages(
             prev_card, with_result_table=True,
         )
-        tab_host, _, _ = build_tab_host(
-            prev_card,
-            [
-                ("results", "结果预览", result_pg),
-                ("summary", "任务摘要", mod_summary.parentWidget()),
-                ("logs", "实时日志", mod_log.parentWidget()),
-            ],
-        )
-        prev_gl.addWidget(tab_host)
+        log_container = mod_log.parentWidget()
+        if log_container is not None:
+            prev_gl.addWidget(log_container)
         right_layout.addWidget(prev_card, 8)
 
         assert mod_table is not None
@@ -727,19 +720,14 @@ class QtPageFactory:
         )
         right_layout.addWidget(sc, 1)
 
-        prev_card, prev_gl = self._create_card("摘要与日志")
+        prev_card, prev_gl = self._create_card("实时日志", "只显示制作过程中的真实滚动日志。")
         prev_card.setParent(right_col)
         _, srv_summary, srv_log, _, _ = self._build_log_pages(
             prev_card, with_result_table=False,
         )
-        tab_host, _, _ = build_tab_host(
-            prev_card,
-            [
-                ("summary", "任务摘要", srv_summary.parentWidget()),
-                ("logs", "实时日志", srv_log.parentWidget()),
-            ],
-        )
-        prev_gl.addWidget(tab_host)
+        log_container = srv_log.parentWidget()
+        if log_container is not None:
+            prev_gl.addWidget(log_container)
         right_layout.addWidget(prev_card, 8)
 
         # 额外按钮：打开日志目录
@@ -787,7 +775,10 @@ class QtPageFactory:
             self.app,
         )
 
-        host_card, host_layout = self._create_card("最近结果预览", "没开始运行时显示固定提示，任务完成后自动切换为真实结果。")
+        host_card, host_layout = self._create_card(
+            "最近结果预览",
+            "没开始运行时显示固定提示，任务完成后自动切换为真实结果。",
+        )
 
         mod_card, mod_l = self._create_card("模组筛选结果")
         mod_sr = QHBoxLayout()
@@ -926,16 +917,9 @@ class QtPageFactory:
         sv_br.addWidget(spb)
         sv_l.addLayout(sv_br)
 
-        tab_host, segmented, stacked = build_tab_host(
-            host_card,
-            [
-                ("mod-result", "模组筛选结果", mod_card),
-                ("server-result", "一键开服结果", sv_card),
-            ],
-        )
-        segmented.setCurrentItem("mod-result")
-        stacked.setCurrentWidget(mod_card)
-        host_layout.addWidget(tab_host)
+        # 结果页直接铺开，避免再出现额外切换条。
+        host_layout.addWidget(mod_card)
+        host_layout.addWidget(sv_card)
         page.container_layout.addWidget(host_card)
         page.container_layout.addStretch(1)
 
