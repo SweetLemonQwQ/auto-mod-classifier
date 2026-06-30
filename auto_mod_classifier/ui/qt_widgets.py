@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -501,7 +501,7 @@ class ActionCard(QFrame):
 def build_result_table(parent: QWidget) -> TableWidget:
     table = TableWidget(parent)
     table.setColumnCount(5)
-    table.setHorizontalHeaderLabels(["#", "文件名", "分类结果", "判定来源", "原因"])
+    table.setHorizontalHeaderLabels(["序号", "文件名", "分类结果", "判定来源", "原因"])
     table.verticalHeader().setVisible(False)
     table.setEditTriggers(TableWidget.NoEditTriggers)
     table.setSelectionBehavior(TableWidget.SelectRows)
@@ -525,8 +525,7 @@ def build_result_table(parent: QWidget) -> TableWidget:
         selection-color: {qt_theme.TEXT_PRIMARY};
         font-size: {FONT_SIZE_XS}px;
     """)
-    table.horizontalHeader().setStyleSheet(
-        f"""
+    apply_themed_style(table.horizontalHeader(), lambda: f"""
         QHeaderView::section {{
             background-color: {qt_theme.TABLE_HEADER_BG};
             color: {qt_theme.TEXT_PRIMARY};
@@ -536,8 +535,7 @@ def build_result_table(parent: QWidget) -> TableWidget:
             font-size: {FONT_SIZE_XS}px;
             font-weight: 600;
         }}
-        """
-    )
+    """)
     return table
 
 
@@ -546,7 +544,6 @@ def populate_result_row(table: TableWidget, row_index: int, values: List[str]) -
     for ci, value in enumerate(numbered_values):
         item = QTableWidgetItem(value)
         item.setToolTip(value)
-        item.setForeground(QBrush(QColor(qt_theme.TEXT_PRIMARY)))
         table.setItem(row_index, ci, item)
 
 

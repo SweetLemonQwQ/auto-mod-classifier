@@ -96,7 +96,7 @@ class ServerPageBuild:
 
 @dataclass
 class ReportPageBuild:
-    page: ScrollablePage
+    page: TaskPage
     sections: Dict[str, ReportSectionState]
 
 
@@ -772,15 +772,15 @@ class QtPageFactory:
     # 结果报告
     # ═══════════════════════════════════════════
     def build_report_page(self) -> ReportPageBuild:
-        page = ScrollablePage(
+        page = TaskPage(
             "reportPage", "结果报告",
-            "默认展示最近一次模组筛选预览，完成任务后会自动刷新真实结果。",
+            "自动显示最近一次完成任务的真实结果，页面本身不再整页滚动。",
             self.app,
         )
 
         host_card, host_layout = self._create_card(
             "最近结果预览",
-            "没开始运行时显示固定提示，任务完成后自动切换为真实结果。",
+            "没开始运行时显示固定提示；完成任务后，会自动切到最近一次的真实结果。",
         )
 
         mod_card, mod_l = self._create_card("模组筛选结果")
@@ -802,8 +802,8 @@ class QtPageFactory:
         )
         mod_sum = PlainTextEdit(mod_card)
         mod_sum.setReadOnly(True)
-        mod_sum.setMinimumHeight(88)
-        mod_sum.setMaximumHeight(120)
+        mod_sum.setMinimumHeight(72)
+        mod_sum.setMaximumHeight(96)
         mod_sum.setPlainText("这里会显示最近一次模组筛选的摘要。")
         apply_read_only_editor_style(mod_sum)
         apply_themed_style(
@@ -828,29 +828,15 @@ class QtPageFactory:
             lambda: f"color: {qt_theme.TEXT_SECONDARY}; background: transparent; font-size: {FONT_SIZE_XS}px; font-weight: 500;",
         )
         mod_table = build_result_table(mod_preview)
-        mod_table.setMinimumHeight(420)
+        mod_table.setMinimumHeight(300)
         enable_filename_copy(mod_table, mod_hint)
         mod_preview_layout.addWidget(mod_hint)
         mod_preview_layout.addWidget(mod_table, 1)
-
-        log_title = StrongBodyLabel("实时日志", mod_card)
-        apply_themed_style(
-            log_title,
-            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
-        )
-        report_log = PlainTextEdit(mod_card)
-        report_log.setReadOnly(True)
-        report_log.setMaximumBlockCount(1500)
-        report_log.setMinimumHeight(220)
-        report_log.setPlainText("等待任务开始。")
-        apply_read_only_editor_style(report_log, console=True)
 
         mod_l.addLayout(mod_sr)
         mod_l.addWidget(mod_tm)
         mod_l.addWidget(mod_sum)
         mod_l.addWidget(mod_preview, 1)
-        mod_l.addWidget(log_title)
-        mod_l.addWidget(report_log, 1)
 
         mod_br = QHBoxLayout()
         mod_br.addStretch(1)
@@ -884,7 +870,8 @@ class QtPageFactory:
         )
         sv_sum = PlainTextEdit(sv_card)
         sv_sum.setReadOnly(True)
-        sv_sum.setMinimumHeight(220)
+        sv_sum.setMinimumHeight(72)
+        sv_sum.setMaximumHeight(96)
         sv_sum.setPlainText("先去“一键开服”页面运行一次脚本。完成后，这里会显示最近一次制作摘要和结果目录入口。")
         apply_read_only_editor_style(sv_sum)
         apply_themed_style(
@@ -898,9 +885,26 @@ class QtPageFactory:
             """,
         )
 
+        sv_preview = QWidget(sv_card)
+        sv_preview_layout = QVBoxLayout(sv_preview)
+        sv_preview_layout.setContentsMargins(0, 0, 0, 0)
+        sv_preview_layout.setSpacing(SPACING_SM)
+        sv_hint = BodyLabel("还没有开始一键开服。先运行一次脚本，完成后这里会自动显示真实结果。", sv_preview)
+        sv_hint.setWordWrap(True)
+        apply_themed_style(
+            sv_hint,
+            lambda: f"color: {qt_theme.TEXT_SECONDARY}; background: transparent; font-size: {FONT_SIZE_XS}px; font-weight: 500;",
+        )
+        sv_table = build_result_table(sv_preview)
+        sv_table.setMinimumHeight(300)
+        enable_filename_copy(sv_table, sv_hint)
+        sv_preview_layout.addWidget(sv_hint)
+        sv_preview_layout.addWidget(sv_table, 1)
+
         sv_l.addLayout(sv_sr)
         sv_l.addWidget(sv_tm)
-        sv_l.addWidget(sv_sum, 1)
+        sv_l.addWidget(sv_sum)
+        sv_l.addWidget(sv_preview, 1)
 
         sv_br = QHBoxLayout()
         sv_br.addStretch(1)
@@ -909,32 +913,28 @@ class QtPageFactory:
         srb.setEnabled(False)
         srb.clicked.connect(lambda: self.app.open_report_path("server", "result"))
         sv_br.addWidget(srb)
-        seb = PushButton("打开日志目录", sv_card)
-        seb.setObjectName("smallButton")
-        seb.setEnabled(False)
-        seb.clicked.connect(lambda: self.app.open_report_path("server", "extra"))
-        sv_br.addWidget(seb)
         spb = PushButton("返回一键开服", sv_card)
         spb.setObjectName("smallButton")
         spb.clicked.connect(lambda: self.app.open_page(self.app.server_page))
         sv_br.addWidget(spb)
         sv_l.addLayout(sv_br)
 
-        # 结果页直接铺开，避免再出现额外切换条。
         host_layout.addWidget(mod_card)
         host_layout.addWidget(sv_card)
+        sv_card.hide()
         page.container_layout.addWidget(host_card)
-        page.container_layout.addStretch(1)
+        host_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         return ReportPageBuild(
             page=page,
             sections={
                 "mod": ReportSectionState(
+                    container_widget=mod_card,
                     status_dot=mod_sd,
                     status_label=mod_st,
                     time_label=mod_tm,
                     summary_edit=mod_sum,
-                    log_edit=report_log,
+                    log_edit=None,
                     result_button=mrb,
                     extra_button=None,
                     empty_state_widget=None,
@@ -945,13 +945,17 @@ class QtPageFactory:
                     preview_hint_label=mod_hint,
                 ),
                 "server": ReportSectionState(
+                    container_widget=sv_card,
                     status_dot=sv_sd,
                     status_label=sv_st,
                     time_label=sv_tm,
                     summary_edit=sv_sum,
                     log_edit=None,
                     result_button=srb,
-                    extra_button=seb,
+                    extra_button=None,
+                    preview_widget=sv_preview,
+                    preview_table=sv_table,
+                    preview_hint_label=sv_hint,
                 ),
             },
         )

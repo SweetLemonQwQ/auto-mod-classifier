@@ -37,6 +37,7 @@ from ..shared import (
     DOWNLOAD_SOURCE_LABELS,
     DOWNLOAD_SOURCE_OPTIONS,
     DOWNLOAD_SOURCE_SMART,
+    MOD_REPORT_BASENAME,
     ModTaskOptions,
     ReviewItem,
     ServerTaskOptions,
@@ -80,6 +81,7 @@ class App(FluentWindow):
         self._runtime_ref: Any = None
         self._settings_data = self._load_settings_data()
         self._theme_mode: Theme = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
+        self._active_report_key = "mod"
 
         self.home_widgets: Optional[HomeWidgets] = None
         self.report_sections: Dict[str, ReportSectionState] = {}
@@ -808,16 +810,24 @@ class App(FluentWindow):
         if section.preview_hint_label is not None:
             section.preview_hint_label.setText("默认按待确认和关键条目优先展示，点击文件名可直接复制。")
 
+        panel_key = self._find_report_section_key(section)
+        if panel_key is None:
+            return
+
         result_dir = section.result_dir
         if not result_dir:
             if section.preview_hint_label is not None:
-                section.preview_hint_label.setText("还没有开始模组筛选。先运行一次脚本，完成后这里会自动显示真实结果。")
+                if panel_key == "server":
+                    section.preview_hint_label.setText("还没有开始一键开服。先运行一次脚本，完成后这里会自动显示真实结果。")
+                else:
+                    section.preview_hint_label.setText("还没有开始模组筛选。先运行一次脚本，完成后这里会自动显示真实结果。")
             return
 
-        csv_path = result_dir / "分类报告.csv"
+        csv_name = f"{MOD_REPORT_BASENAME}.csv" if panel_key == "server" else "分类报告.csv"
+        csv_path = result_dir / csv_name
         if not csv_path.exists():
             if section.preview_hint_label is not None:
-                section.preview_hint_label.setText("脚本已经执行过，但当前结果目录里没找到 `分类报告.csv`，可以先打开结果目录检查导出是否完整。")
+                section.preview_hint_label.setText(f"脚本已经执行过，但当前结果目录里没找到 `{csv_name}`，可以先打开结果目录检查导出是否完整。")
             return
 
         try:
@@ -825,12 +835,12 @@ class App(FluentWindow):
                 rows = list(csv.DictReader(fp))
         except Exception as exc:
             if section.preview_hint_label is not None:
-                section.preview_hint_label.setText(f"当前无法读取 `分类报告.csv`：{exc}")
+                section.preview_hint_label.setText(f"当前无法读取 `{csv_name}`：{exc}")
             return
 
         if not rows:
             if section.preview_hint_label is not None:
-                section.preview_hint_label.setText("这次导出的 `分类报告.csv` 还是空的，暂时没有可以铺开的分类明细。")
+                section.preview_hint_label.setText(f"这次导出的 `{csv_name}` 还是空的，暂时没有可以铺开的分类明细。")
             return
 
         priority = {"无法分类": 0, "服务端保留": 1, "纯客户端移出": 2}
@@ -838,12 +848,15 @@ class App(FluentWindow):
         preview_rows = ordered_rows[:60]
         table.setRowCount(len(preview_rows))
         for row_index, row in enumerate(preview_rows):
+            category_value = str(row.get("分类结果", ""))
+            if category_value in {"server-keep", "client-only", "unknown"}:
+                category_value = get_category_label(category_value)
             populate_result_row(
                 table,
                 row_index,
                 [
                     str(row.get("文件名", "")),
-                    str(row.get("分类结果", "")),
+                    category_value,
                     str(row.get("判定来源", "")),
                     str(row.get("判定原因", "")),
                 ],
@@ -854,6 +867,18 @@ class App(FluentWindow):
             section.preview_hint_label.setText(
                 f"已读取 {len(rows)} 条 CSV 结果，当前预览前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。点击文件名可复制。"
             )
+
+    def _find_report_section_key(self, target_section: ReportSectionState) -> Optional[str]:
+        for panel_key, section in self.report_sections.items():
+            if section is target_section:
+                return panel_key
+        return None
+
+    def _set_active_report_section(self, panel_key: str) -> None:
+        self._active_report_key = panel_key
+        for key, section in self.report_sections.items():
+            if section.container_widget is not None:
+                section.container_widget.setVisible(key == panel_key)
     def _update_report_section(
         self,
         panel_key: str,
@@ -876,8 +901,8 @@ class App(FluentWindow):
         section.result_button.setEnabled(bool(result_dir))
         if section.extra_button is not None:
             section.extra_button.setEnabled(bool(extra_dir))
-        if panel_key == "mod":
-            self._load_report_preview(section)
+        self._load_report_preview(section)
+        self._set_active_report_section(panel_key)
 
     def _refresh_home_overview(
         self,
@@ -909,8 +934,6 @@ class App(FluentWindow):
             if panel_key == "mod":
                 section.status_label.setText("还没有开始模组筛选")
                 section.summary_edit.setPlainText("这里会显示最近一次模组筛选的摘要。")
-                if section.log_edit is not None:
-                    section.log_edit.setPlainText("等待任务开始。")
                 section.time_label.setText("最近时间：暂无")
                 section.result_dir = None
                 section.extra_dir = None
@@ -921,9 +944,11 @@ class App(FluentWindow):
                 section.time_label.setText("最近时间：暂无")
                 section.result_dir = None
                 section.extra_dir = None
+                self._load_report_preview(section)
             section.result_button.setEnabled(False)
             if section.extra_button is not None:
                 section.extra_button.setEnabled(False)
+        self._set_active_report_section(self._active_report_key)
 
     def _status_to_dot_state(self, status: str) -> str:
         if any(word in status for word in ("失败", "错误", "异常")):

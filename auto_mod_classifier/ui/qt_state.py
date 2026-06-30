@@ -36,6 +36,7 @@ class HomeWidgets:
 
 @dataclass
 class ReportSectionState:
+    container_widget: Optional[QWidget]
     status_dot: "StatusDot"
     status_label: StrongBodyLabel
     time_label: BodyLabel
