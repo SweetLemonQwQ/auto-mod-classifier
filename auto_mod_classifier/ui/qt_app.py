@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QCloseEvent, QDesktopServices, QDragEnterEvent, QDropEvent, QIcon
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
 from qfluentwidgets import (
@@ -23,6 +23,7 @@ from qfluentwidgets import (
     InfoBarPosition,
     NavigationItemPosition,
     Theme,
+    qconfig,
     setTheme,
     setThemeColor,
 )
@@ -59,6 +60,7 @@ class App(FluentWindow):
         self.ui_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
         self._pending_logs: Dict[str, List[str]] = {"mod": [], "server": []}
         self._runtime_ref: Any = None
+        self._theme_mode: Theme = qconfig.themeMode.value
 
         self.home_widgets: Optional[HomeWidgets] = None
         self.report_sections: Dict[str, ReportSectionState] = {}
@@ -72,12 +74,18 @@ class App(FluentWindow):
 
         self._build_window()
         self._build_pages()
+        self._apply_theme_visuals(self._theme_mode, sync_fluent_theme=False)
         self._refresh_home_overview()
         self._refresh_report_sections()
 
         self.queue_timer = QTimer(self)
         self.queue_timer.timeout.connect(self.poll_queue)
         self.queue_timer.start(120)
+
+        app = QApplication.instance()
+        if app is not None:
+            # 跟随系统时，系统明暗切换后要同步刷新自定义配色。
+            app.styleHints().colorSchemeChanged.connect(self._on_system_color_scheme_changed)
 
     def _build_window(self) -> None:
         self.setWindowTitle(APP_TITLE)
@@ -165,31 +173,30 @@ class App(FluentWindow):
         if callable(scroll_to_top):
             scroll_to_top()
 
-    def on_theme_changed(self, index: int) -> None:
-        from qfluentwidgets import qconfig
-        theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
-        theme = theme_map.get(index, Theme.DARK)
-        # 1) 同步切换自定义 palette（背景/卡片/边框/文字/卡片悬浮等）
-        palette_name = {Theme.DARK: "dark", Theme.LIGHT: "light"}.get(theme, "dark")
-        from . import qt_theme as _qt_theme
-        _qt_theme.set_palette(palette_name)
-        # 2) 重新生成主窗口全局 QSS（背景、QMenu、按钮、输入框、表格等大块色值都靠它）
+    def _resolve_effective_theme(self, theme_mode: Theme) -> Theme:
+        if theme_mode != Theme.AUTO:
+            return theme_mode
+        app = QApplication.instance()
+        if app is None:
+            return Theme.DARK
+        color_scheme = app.styleHints().colorScheme()
+        return Theme.DARK if color_scheme == Qt.ColorScheme.Dark else Theme.LIGHT
+
+    def _apply_theme_visuals(self, theme_mode: Theme, *, sync_fluent_theme: bool) -> None:
+        effective_theme = self._resolve_effective_theme(theme_mode)
+        palette_name = "dark" if effective_theme == Theme.DARK else "light"
+        set_palette(palette_name)
         self.setStyleSheet(build_window_stylesheet())
-        # 3) 强制让 FluentWindow 的 paintEvent 用我们调色板的底色。
-        #    BackgroundAnimationWidget 监听 qconfig.themeChanged 调 _updateBackgroundColor，
-        #    但它读的是 isDarkTheme()（看 qconfig.theme），不是我们自己的 palette。
-        #    AUTO 模式下 qconfig.theme 会是 LIGHT/DARK，行为和 setTheme 一致。
-        #    但 setCustomBackgroundColor 必须在 setStyleSheet 之后调，且要在 qconfig.themeChanged
-        #    信号真正触发动画 _结束_ 之前，让 backgroundColor 切到对的色。
         light_bg = QColor("#F4F6FA")
         dark_bg = QColor("#0D1119")
         self.setCustomBackgroundColor(light_bg, dark_bg)
-        # 4) 再调 qfluentwidgets setTheme，让内置组件（侧边栏/导航/标题栏）刷一遍
-        setTheme(theme)
-        # 5) 重设所有已通过 apply_themed_style 注册的子 widget 样式
+        if sync_fluent_theme:
+            setTheme(theme_mode)
         refresh_themed_styles()
-        # 6) 强制刷新整个 widget tree，让所有控件重新应用样式
-        # 注意：只对 visible widget 调 polish，避免对离屏/隐藏 widget 触发昂贵的 layout pass
+        self._refresh_visible_widget_styles()
+
+    def _refresh_visible_widget_styles(self) -> None:
+        """主题切换后强制刷新可见控件，避免残留旧主题样式。"""
         self.style().unpolish(self)
         self.style().polish(self)
         for child in self.findChildren(QWidget):
@@ -200,6 +207,26 @@ class App(FluentWindow):
                 child.style().polish(child)
             except RuntimeError:
                 pass
+
+    def _on_system_color_scheme_changed(self, _color_scheme: Qt.ColorScheme) -> None:
+        if self._theme_mode != Theme.AUTO:
+            return
+        self._apply_theme_visuals(Theme.AUTO, sync_fluent_theme=True)
+
+    def on_theme_changed(self, index: int) -> None:
+        theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
+        theme = theme_map.get(index, Theme.DARK)
+        self._theme_mode = theme
+        # 1) 同步切换自定义 palette（背景/卡片/边框/文字/卡片悬浮等）
+        # 2) 重新生成主窗口全局 QSS（背景、QMenu、按钮、输入框、表格等大块色值都靠它）
+        # 3) 强制让 FluentWindow 的 paintEvent 用我们调色板的底色。
+        #    BackgroundAnimationWidget 监听 qconfig.themeChanged 调 _updateBackgroundColor，
+        #    但它读的是 isDarkTheme()（看 qconfig.theme），不是我们自己的 palette。
+        #    AUTO 模式下 qconfig.theme 会是 LIGHT/DARK，行为和 setTheme 一致。
+        #    但 setCustomBackgroundColor 必须在 setStyleSheet 之后调，且要在 qconfig.themeChanged
+        #    信号真正触发动画 _结束_ 之前，让 backgroundColor 切到对的色。
+        # 4) 再调 qfluentwidgets setTheme，让内置组件（侧边栏/导航/标题栏）刷一遍
+        self._apply_theme_visuals(theme, sync_fluent_theme=True)
 
     def choose_mod_folder(self) -> None:
         selected = QFileDialog.getExistingDirectory(self, "选择 mods 目录")
@@ -831,7 +858,7 @@ def main() -> None:
         created_app = True
 
     app.setApplicationName(APP_TITLE)
-    setTheme(Theme.DARK)
+    setTheme(qconfig.themeMode.value)
     setThemeColor(QColor(ACCENT_COLOR))
 
     window = App()
