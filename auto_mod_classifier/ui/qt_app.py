@@ -78,6 +78,7 @@ class App(FluentWindow):
         self.worker_thread: Optional[threading.Thread] = None
         self.ui_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
         self._pending_logs: Dict[str, List[str]] = {"mod": [], "server": []}
+        self._stage_event_mode: Dict[str, bool] = {"mod": False, "server": False}
         self._runtime_ref: Any = None
         self._settings_data = self._load_settings_data()
         self._theme_mode: Theme = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
@@ -529,6 +530,7 @@ class App(FluentWindow):
     def clear_panel(self, panel_key: str) -> None:
         panel = self.get_panel(panel_key)
         self._pending_logs[panel_key] = []
+        self._stage_event_mode[panel_key] = False
         panel.log_edit.clear()
         panel.summary_edit.setPlainText("任务进行中，完成后这里会刷新摘要。")
         panel.progress_bar.setValue(0)
@@ -627,6 +629,8 @@ class App(FluentWindow):
                 panel.status_label.setText(str(payload))
                 panel.status_dot.set_state(self._status_to_dot_state(str(payload)))
                 self._update_stage_by_message(panel_key, str(payload))
+            elif kind == "stage":
+                self._update_stage_by_event(panel_key, payload)
             elif kind == "progress":
                 panel.progress_bar.setValue(max(0, min(100, int(float(payload)))))
             elif kind == "output":
@@ -735,6 +739,8 @@ class App(FluentWindow):
         return None
 
     def _update_stage_by_message(self, panel_key: str, message: str) -> None:
+        if self._stage_event_mode.get(panel_key):
+            return
         panel = self.get_panel(panel_key)
         if panel.stage_board is None:
             return
@@ -744,6 +750,19 @@ class App(FluentWindow):
         if stage_key not in panel.stage_board.stage_rows:
             return
         panel.stage_board.activate(stage_key, str(message))
+        stage_title = panel.stage_board.stage_rows[stage_key]["title"].text()
+        panel.stage_label.setText(f"当前阶段：{stage_title}")
+
+    def _update_stage_by_event(self, panel_key: str, payload: Any) -> None:
+        panel = self.get_panel(panel_key)
+        if panel.stage_board is None or not isinstance(payload, dict):
+            return
+        stage_key = str(payload.get("stage_key", "")).strip()
+        detail = str(payload.get("detail", "")).strip()
+        if not stage_key or stage_key not in panel.stage_board.stage_rows:
+            return
+        self._stage_event_mode[panel_key] = True
+        panel.stage_board.activate(stage_key, detail)
         stage_title = panel.stage_board.stage_rows[stage_key]["title"].text()
         panel.stage_label.setText(f"当前阶段：{stage_title}")
 

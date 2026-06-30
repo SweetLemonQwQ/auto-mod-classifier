@@ -14,6 +14,7 @@ class ServerBuilderRuntime:
     set_status: Callable[[str], None]
     set_progress: Callable[[float], None]
     set_download_status: Callable[[str], None]
+    emit_stage: Callable[[str, str], None]
     request_version_choice: Callable[[List[VersionCandidate]], Optional[VersionCandidate]]
     request_checklist: Callable[[str, str, List[ReviewItem]], Optional[List[str]]]
     download_source: str

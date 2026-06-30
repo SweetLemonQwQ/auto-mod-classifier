@@ -33,6 +33,7 @@ class LegacyModScanService:
             client_dir.mkdir(parents=True, exist_ok=True)
             unknown_dir.mkdir(parents=True, exist_ok=True)
 
+            emit("stage", {"stage_key": "scan", "detail": f"开始扫描目录：{source.mods_path}"})
             emit("log", f"开始扫描目录：{source.mods_path}")
             emit("log", f"共发现 {len(jar_files)} 个 jar 模组")
             worker_count = get_classification_worker_count(len(jar_files))
@@ -44,6 +45,7 @@ class LegacyModScanService:
             def first_pass_progress(completed: int, total: int, jar: Path) -> None:
                 percent = completed / max(total, 1)
                 emit("progress", percent * first_span)
+                emit("stage", {"stage_key": "classify", "detail": f"正在汇总：{jar.name}"})
                 emit("status", f"正在汇总：{jar.name}")
 
             def first_pass_result(completed: int, total: int, jar: Path, row: Dict[str, Any]) -> None:
@@ -64,6 +66,7 @@ class LegacyModScanService:
                     classifier.close_browser()
                     retry_total = len(unknown_rows)
                     retry_worker_count = get_classification_worker_count(retry_total)
+                    emit("stage", {"stage_key": "second-pass", "detail": f"开始进行 2次筛选：仅重试首轮未确定的 {retry_total} 个模组"})
                     emit("log", f"开始进行 2次筛选：仅重试首轮未确定的 {retry_total} 个模组")
                     if retry_total > 1:
                         emit("log", f"2次筛选使用 {retry_worker_count} 个并发线程")
@@ -71,6 +74,7 @@ class LegacyModScanService:
                     def second_pass_progress(completed: int, total: int, jar: Path) -> None:
                         percent = completed / max(total, 1)
                         emit("progress", 72 + percent * 16)
+                        emit("stage", {"stage_key": "second-pass", "detail": f"正在进行 2次筛选：{jar.name}"})
                         emit("status", f"正在进行 2次筛选：{jar.name}")
 
                     def second_pass_result(completed: int, total: int, jar: Path, row: Dict[str, Any]) -> None:
@@ -89,6 +93,7 @@ class LegacyModScanService:
                     emit("log", "已开启 2次筛选，但首轮没有 unknown 模组，跳过重试")
 
             emit("progress", 90)
+            emit("stage", {"stage_key": "complete", "detail": "正在整理分类结果目录…"})
             emit("status", "正在整理分类结果目录…")
             if not source.allow_file_move and not request.dry_run:
                 raise RuntimeError("当前输入源不支持直接移动原始文件，请改用仅试运行。")
@@ -119,6 +124,7 @@ class LegacyModScanService:
             txt_path = result_root / "分类摘要.txt"
 
             emit("progress", 96)
+            emit("stage", {"stage_key": "complete", "detail": "正在写出报告…"})
             emit("status", "正在写出报告…")
             output_rows = [{key: value for key, value in row.items() if key != "Path"} for row in results]
 
@@ -195,6 +201,7 @@ class LegacyServerBuildService:
                 set_status=lambda message: emit("status", message),
                 set_progress=lambda value: emit("progress", value),
                 set_download_status=lambda message: emit("download-stats", message),
+                emit_stage=lambda stage_key, detail: emit("stage", {"stage_key": stage_key, "detail": detail}),
                 request_version_choice=request_version_choice,
                 request_checklist=request_checklist,
                 download_source=request.download_source,

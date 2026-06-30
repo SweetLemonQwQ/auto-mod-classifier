@@ -9,6 +9,21 @@ from .context import ServerBuilderRuntime
 class ServerBuilderCommonService:
     """一键开服通用工具与共享操作。"""
 
+    STAGE_EVENT_MAP = {
+        TaskStage.PRECHECK: "precheck",
+        TaskStage.CLIENT_SCAN: "scan",
+        TaskStage.DOWNLOAD_INSTALLER: "installer",
+        TaskStage.INSTALL_SERVER: "install",
+        TaskStage.CLASSIFY_MODS: "classify",
+        TaskStage.COPY_MODS: "classify",
+        TaskStage.COPY_CONFIGS: "classify",
+        TaskStage.PREPARE_LAUNCH: "verify",
+        TaskStage.FIRST_BOOT: "verify",
+        TaskStage.PATCH_CONFIG: "verify",
+        TaskStage.VERIFY_BOOT: "verify",
+        TaskStage.COMPLETE: "verify",
+    }
+
     def __init__(self, runtime: ServerBuilderRuntime):
         self.runtime = runtime
 
@@ -20,6 +35,9 @@ class ServerBuilderCommonService:
     def set_stage(self, stage: TaskStage, progress: float, detail: str) -> None:
         # 阶段更新也统一收口，界面和日志会一起同步。
         self.runtime.set_progress(progress)
+        stage_key = self.STAGE_EVENT_MAP.get(stage)
+        if stage_key:
+            self.runtime.emit_stage(stage_key, detail)
         self.runtime.set_status(f"{stage.value}：{detail}")
         self.log_line(f"[{stage.value}] {detail}")
 
