@@ -190,6 +190,7 @@ class LegacyServerBuildService:
     ) -> None:
         classifier: Optional[ClassifierCore] = None
         try:
+            emit("log", "正在初始化一键开服后端流程…")
             classifier = ClassifierCore()
             classifier.use_curseforge = request.use_curseforge
             classifier.browser_warning_callback = lambda message: emit("warning", message)

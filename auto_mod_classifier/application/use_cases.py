@@ -73,6 +73,9 @@ class BuildServerUseCase:
         request_checklist: Callable[[str, str, list], Optional[list]],
     ) -> None:
         # 一键开服同样先走输入整理，这样后面才能轻松支持目录、mrpack、zip 等来源。
+        emit("stage", {"stage_key": "scan", "detail": "正在准备一键开服输入源"})
+        emit("status", "正在准备一键开服输入源…")
+        emit("log", f"开始准备一键开服输入源：{request.source_path}")
         try:
             source = self.importer_registry.prepare_server_build(request, emit)
         except Exception as exc:
@@ -82,6 +85,11 @@ class BuildServerUseCase:
         try:
             metadata = source.metadata if isinstance(source.metadata, dict) else {}
             progress_offset = int(metadata.get("service_progress_offset", 0))
+            emit("log", f"输入源准备完成：{source.client_dir}")
+            if source.version_candidates:
+                emit("log", f"预解析到 {len(source.version_candidates)} 个版本候选。")
+            emit("stage", {"stage_key": "scan", "detail": "输入源准备完成，正在启动制作流程"})
+            emit("status", "输入源准备完成，正在启动制作流程…")
             service_emit = _wrap_progress_emit(emit, progress_offset)
             self.server_build_service.run(
                 source,

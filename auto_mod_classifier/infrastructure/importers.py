@@ -158,6 +158,24 @@ def _find_nested_root(base_dir: Path, accepted_names: Iterable[str]) -> Optional
     return None
 
 
+def _build_single_version_directory_hint(source_path: Path) -> Optional[str]:
+    """识别误选 versions/某版本 目录的常见情况，尽早给出明确提示。"""
+    if source_path.parent.name.lower() != "versions":
+        return None
+
+    version_json = source_path / f"{source_path.name}.json"
+    version_jar = source_path / f"{source_path.name}.jar"
+    if not version_json.exists() and not version_jar.exists():
+        return None
+
+    instance_root = source_path.parent.parent
+    return (
+        "当前选择的是 versions 下的单个版本目录，不能直接用于一键开服。\n"
+        "请改选包含 mods、config、versions 的客户端实例根目录，通常是 .minecraft 或启动器实例根目录。\n"
+        f"可尝试改选：{instance_root}"
+    )
+
+
 def _looks_like_client_root(path: Path) -> bool:
     if (path / ".minecraft").is_dir():
         return True
@@ -299,6 +317,9 @@ class DirectorySourceImporter:
         source_path = request.source_path.resolve()
         if not source_path.exists() or not source_path.is_dir():
             raise RuntimeError("客户端实例目录不存在。")
+        version_dir_hint = _build_single_version_directory_hint(source_path)
+        if version_dir_hint:
+            raise RuntimeError(version_dir_hint)
         return PreparedServerSource(
             source_kind="directory",
             display_path=request.source_path,
