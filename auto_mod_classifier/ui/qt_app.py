@@ -149,9 +149,10 @@ class App(FluentWindow):
         # 禁用 FluentWindow 内部的页面切换弹出动画（"下方弹出 + OutQuad" 会闪一下），
         # 直接瞬切更干净。所有"用 setCurrentWidget 切换页面"的代码会自动走这条路径。
         self.stackedWidget.setAnimationEnabled(False)
-        # 固定导航栏宽度，禁用折叠
+        # 固定展开宽度，但默认保持收起，避免窄窗口启动时挤占内容区。
         self.navigationInterface.setExpandWidth(300)
-        self.navigationInterface.setCollapsible(False)
+        self.navigationInterface.setCollapsible(True)
+        self.navigationInterface.panel.collapse()
 
         self.open_page(self.home_page)
 
