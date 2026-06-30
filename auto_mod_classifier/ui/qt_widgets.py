@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 from qfluentwidgets import (
     BodyLabel,
+    PlainTextEdit,
     ScrollArea,
     StrongBodyLabel,
     TableWidget,
@@ -205,6 +206,74 @@ class StatusDot(QFrame):
             }}
             """
         )
+
+
+class LiveLogEdit(PlainTextEdit):
+    """实时日志框：默认跟随最新日志，用户手动滚走后暂停自动滚动。"""
+
+    _BOTTOM_TOLERANCE = 4
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._auto_follow_enabled = True
+        self._internal_scroll_change = False
+        bar = self.verticalScrollBar()
+        bar.sliderMoved.connect(self._sync_auto_follow_state)
+        bar.sliderReleased.connect(self._sync_auto_follow_state)
+        bar.actionTriggered.connect(self._defer_sync_auto_follow_state)
+
+    def appendPlainText(self, text: str) -> None:
+        should_follow = self._auto_follow_enabled or self._is_at_bottom()
+        super().appendPlainText(text)
+        if should_follow:
+            self.scroll_to_bottom()
+        else:
+            self._auto_follow_enabled = False
+
+    def setPlainText(self, text: str) -> None:
+        super().setPlainText(text)
+        self.scroll_to_bottom()
+
+    def clear(self) -> None:
+        super().clear()
+        self._auto_follow_enabled = True
+
+    def wheelEvent(self, event) -> None:
+        super().wheelEvent(event)
+        self._sync_auto_follow_state()
+
+    def keyPressEvent(self, event) -> None:
+        super().keyPressEvent(event)
+        if event.key() in {
+            Qt.Key_Up,
+            Qt.Key_Down,
+            Qt.Key_PageUp,
+            Qt.Key_PageDown,
+            Qt.Key_Home,
+            Qt.Key_End,
+        }:
+            self._defer_sync_auto_follow_state()
+
+    def scroll_to_bottom(self) -> None:
+        bar = self.verticalScrollBar()
+        self._internal_scroll_change = True
+        try:
+            bar.setValue(bar.maximum())
+        finally:
+            self._internal_scroll_change = False
+        self._auto_follow_enabled = True
+
+    def _is_at_bottom(self) -> bool:
+        bar = self.verticalScrollBar()
+        return bar.value() >= bar.maximum() - self._BOTTOM_TOLERANCE
+
+    def _defer_sync_auto_follow_state(self, *_args) -> None:
+        QTimer.singleShot(0, self._sync_auto_follow_state)
+
+    def _sync_auto_follow_state(self) -> None:
+        if self._internal_scroll_change:
+            return
+        self._auto_follow_enabled = self._is_at_bottom()
 
 
 class MetricCard(QFrame):

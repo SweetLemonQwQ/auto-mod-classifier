@@ -64,6 +64,7 @@ from .qt_theme import (
 )
 from .qt_widgets import (
     ActionCard,
+    LiveLogEdit,
     MetricCard,
     ScrollablePage,
     StageBoard,
@@ -332,7 +333,7 @@ class QtPageFactory:
         log_page = QWidget(parent)
         log_layout = QVBoxLayout(log_page)
         log_layout.setContentsMargins(0, 0, 0, 0)
-        log_edit = PlainTextEdit(log_page)
+        log_edit = LiveLogEdit(log_page)
         log_edit.setReadOnly(True)
         log_edit.setMaximumBlockCount(1500)
         log_edit.setPlainText("等待任务开始。")
