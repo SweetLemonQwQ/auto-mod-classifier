@@ -63,6 +63,7 @@ DEFAULT_UI_SETTINGS: Dict[str, Any] = {
     "server_output_path": "",
     "server_download_source": DOWNLOAD_SOURCE_SMART,
     "java_rule_index": 0,
+    "auto_download_java": True,
     "cache_path": "",
     "cache_auto_cleanup": True,
     "theme_index": 0,
@@ -256,6 +257,7 @@ class App(FluentWindow):
         )
         java_rule_index = int(data.get("java_rule_index", 0))
         settings_widgets.java_rule_combo.setCurrentIndex(max(0, min(java_rule_index, settings_widgets.java_rule_combo.count() - 1)))
+        settings_widgets.auto_download_java_checkbox.setChecked(bool(data.get("auto_download_java", True)))
         settings_widgets.cache_path_edit.setText(str(data.get("cache_path", "")))
         settings_widgets.cache_auto_cleanup_checkbox.setChecked(bool(data.get("cache_auto_cleanup", True)))
         theme_index = int(data.get("theme_index", 0))
@@ -275,6 +277,7 @@ class App(FluentWindow):
             "server_output_path": settings_widgets.server_output_path_edit.text().strip(),
             "server_download_source": self.resolve_download_source(settings_widgets.server_download_source_combo),
             "java_rule_index": settings_widgets.java_rule_combo.currentIndex(),
+            "auto_download_java": settings_widgets.auto_download_java_checkbox.isChecked(),
             "cache_path": settings_widgets.cache_path_edit.text().strip(),
             "cache_auto_cleanup": settings_widgets.cache_auto_cleanup_checkbox.isChecked(),
             "theme_index": settings_widgets.theme_combo.currentIndex(),
@@ -526,6 +529,7 @@ class App(FluentWindow):
             use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
             enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
+            auto_download_java=settings_widgets.auto_download_java_checkbox.isChecked(),
         )
         self.worker_thread = threading.Thread(
             target=run_server_task,

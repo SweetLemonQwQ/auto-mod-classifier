@@ -207,6 +207,7 @@ class LegacyServerBuildService:
                 download_source=request.download_source,
                 use_mcmod=request.use_mcmod,
                 enable_second_pass=request.enable_second_pass,
+                auto_download_java=request.auto_download_java,
                 prepared_version_candidates=source.version_candidates,
             )
             result = builder.build_server(source.client_dir, request.output_dir)

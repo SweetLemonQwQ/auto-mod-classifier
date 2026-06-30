@@ -35,6 +35,7 @@ class BuildServerRequest:
     use_mcmod: bool
     use_curseforge: bool
     enable_second_pass: bool
+    auto_download_java: bool = True
 
 
 @dataclass

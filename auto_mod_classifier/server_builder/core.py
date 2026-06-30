@@ -29,6 +29,7 @@ class ServerBuilderCore:
         download_source: str,
         use_mcmod: bool,
         enable_second_pass: bool,
+        auto_download_java: bool,
         prepared_version_candidates: Optional[List[VersionCandidate]] = None,
     ):
         # core 现在更像“装配中心”，而不是过去那种什么都自己干的大对象。
@@ -44,6 +45,7 @@ class ServerBuilderCore:
             download_source=download_source,
             use_mcmod=use_mcmod,
             enable_second_pass=enable_second_pass,
+            auto_download_java=auto_download_java,
             prepared_version_candidates=list(prepared_version_candidates or []),
         )
         self.common = ServerBuilderCommonService(self.runtime)

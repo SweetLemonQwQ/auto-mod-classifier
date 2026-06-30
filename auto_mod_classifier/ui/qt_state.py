@@ -99,6 +99,7 @@ class SettingsWidgets:
     server_output_path_edit: LineEdit
     server_download_source_combo: ComboBox
     java_rule_combo: ComboBox
+    auto_download_java_checkbox: CheckBox
     cache_path_edit: LineEdit
     cache_auto_cleanup_checkbox: CheckBox
     theme_combo: ComboBox

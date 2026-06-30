@@ -256,6 +256,102 @@ class ServerJavaService:
     def __init__(self, common: ServerBuilderCommonService):
         self.common = common
 
+    def _build_adoptium_assets_url(self, required_major: int) -> str:
+        return (
+            f"https://api.adoptium.net/v3/assets/latest/{required_major}/hotspot"
+            f"?architecture=x64&image_type=jdk&os=windows"
+        )
+
+    def _resolve_download_target_root(self, output_root: Path, required_major: int) -> Path:
+        return output_root / "runtime" / f"temurin-jdk-{required_major}"
+
+    def _find_java_home_from_directory(self, base_dir: Path) -> Optional[Path]:
+        direct_java = base_dir / "bin" / "java.exe"
+        if direct_java.exists():
+            return base_dir
+        for java_path in sorted(base_dir.rglob("java.exe"), key=lambda item: str(item).lower()):
+            if java_path.parent.name.lower() == "bin":
+                return java_path.parent.parent
+        return None
+
+    def _resolve_adoptium_package(self, required_major: int) -> Dict[str, str]:
+        assets = self.common.http_get_json(self._build_adoptium_assets_url(required_major))
+        if not isinstance(assets, list) or not assets:
+            raise RuntimeError(f"官方源未返回可用的 Java {required_major} 下载信息。")
+
+        first_item = assets[0] if isinstance(assets[0], dict) else {}
+        binary = first_item.get("binary") or {}
+        package = binary.get("package") or {}
+        package_link = str(package.get("link") or "").strip()
+        package_name = str(package.get("name") or "").strip()
+        release_name = str(first_item.get("release_name") or f"jdk-{required_major}").strip()
+        if not package_link or not package_name:
+            raise RuntimeError(f"官方源返回的 Java {required_major} 下载信息不完整。")
+        return {
+            "link": package_link,
+            "name": package_name,
+            "release_name": release_name,
+        }
+
+    def _download_java_runtime(self, required_major: int, output_root: Path) -> JavaRuntime:
+        runtime_root = self._resolve_download_target_root(output_root, required_major)
+        existing_runtime = self.inspect_java_runtime(runtime_root / "bin" / "java.exe", f"自动下载/Temurin JDK {required_major}")
+        if existing_runtime and existing_runtime.major == required_major:
+            self.common.log_line(f"复用已下载的 Java：{existing_runtime.summary}")
+            return existing_runtime
+
+        package = self._resolve_adoptium_package(required_major)
+        tool_root = output_root / TOOL_DIR_NAME / "java_downloads"
+        archive_path = tool_root / package["name"]
+        extract_root = tool_root / f"extract_jdk_{required_major}"
+        runtime_root.parent.mkdir(parents=True, exist_ok=True)
+        tool_root.mkdir(parents=True, exist_ok=True)
+
+        self.common.log_line(f"未找到匹配 Java，准备自动下载 Java {required_major}：{package['release_name']}")
+        reporter = DownloadStatsReporter(self.common.runtime.set_download_status, total_files=1, thread_limit=1)
+        try:
+            self.common.http_download(
+                package["link"],
+                archive_path,
+                reporter=reporter,
+                display_name=package["name"],
+                log_callback=self.common.log_line,
+            )
+        finally:
+            reporter.close()
+
+        self.common.runtime.set_download_status(f"Java 下载完成，正在解压：{package['name']}")
+        self.common.log_line(f"Java 下载完成，开始解压：{archive_path.name}")
+        if extract_root.exists():
+            shutil.rmtree(extract_root, ignore_errors=True)
+        extract_root.mkdir(parents=True, exist_ok=True)
+        try:
+            with zipfile.ZipFile(archive_path, "r") as archive:
+                archive.extractall(extract_root)
+        except zipfile.BadZipFile as exc:
+            raise RuntimeError(f"自动下载的 Java 压缩包损坏：{archive_path.name}") from exc
+        finally:
+            try:
+                archive_path.unlink()
+            except OSError:
+                pass
+
+        java_home = self._find_java_home_from_directory(extract_root)
+        if java_home is None:
+            raise RuntimeError("Java 压缩包已经下载完成，但解压后没找到 bin/java.exe。")
+
+        if runtime_root.exists():
+            shutil.rmtree(runtime_root, ignore_errors=True)
+        shutil.move(str(java_home), str(runtime_root))
+        shutil.rmtree(extract_root, ignore_errors=True)
+
+        runtime = self.inspect_java_runtime(runtime_root / "bin" / "java.exe", f"自动下载/Temurin JDK {required_major}")
+        if runtime is None or runtime.major != required_major:
+            raise RuntimeError(f"自动下载的 Java 校验失败，未得到可用的 Java {required_major}。")
+        self.common.log_line(f"自动下载 Java 完成：{runtime.summary}")
+        self.common.runtime.set_download_status(build_idle_download_status_text())
+        return runtime
+
     def get_required_java_major(self, candidate: VersionCandidate) -> int:
         release = self.common.parse_release_version(candidate.minecraft_version)
         if release:
@@ -479,7 +575,7 @@ class ServerJavaService:
             lines.append(f"- 其余 {len(runtimes) - 8} 个结果已省略")
         return "\n".join(lines)
 
-    def ensure_java(self, client_dir: Path, game_root: Path, candidate: VersionCandidate) -> JavaRuntime:
+    def ensure_java(self, client_dir: Path, game_root: Path, candidate: VersionCandidate, output_root: Path) -> JavaRuntime:
         required_major = self.get_required_java_major(candidate)
         require_64bit = self.java_requires_64bit(required_major)
 
@@ -492,6 +588,16 @@ class ServerJavaService:
         matched = [item for item in runtimes if item.major == required_major and (item.is_64bit or not require_64bit)]
         if matched:
             return matched[0]
+
+        if self.common.runtime.auto_download_java:
+            self.common.log_line(f"当前未找到可直接使用的 Java {required_major}，将尝试自动下载到输出目录。")
+            downloaded_runtime = self._download_java_runtime(required_major, output_root)
+            if downloaded_runtime.is_64bit or not require_64bit:
+                return downloaded_runtime
+            raise RuntimeError(
+                f"自动下载完成，但下载到的 Java {required_major} 仍然不满足 64 位要求。\n"
+                f"{downloaded_runtime.summary}"
+            )
 
         if require_64bit and any(item.major == required_major for item in runtimes):
             raise RuntimeError(
@@ -1180,7 +1286,7 @@ class ServerWorkflowService:
 
             required_java_major = self.java.get_required_java_major(chosen)
             self.common.set_stage(TaskStage.PRECHECK, 24, f"正在匹配 Java {required_java_major}")
-            java_runtime = self.java.ensure_java(client_dir, game_root, chosen)
+            java_runtime = self.java.ensure_java(client_dir, game_root, chosen, output_root)
             self.common.log_line(f"Minecraft {chosen.minecraft_version} 需要 Java {required_java_major}")
             self.common.log_line(f"已选 Java：{java_runtime.summary} | 来源：{java_runtime.source}")
 

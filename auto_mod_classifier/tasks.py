@@ -29,6 +29,7 @@ def _build_server_request(options: ServerTaskOptions) -> BuildServerRequest:
         use_mcmod=options.use_mcmod,
         use_curseforge=options.use_curseforge,
         enable_second_pass=options.enable_second_pass,
+        auto_download_java=options.auto_download_java,
     )
 
 

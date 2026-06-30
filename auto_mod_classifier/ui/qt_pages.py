@@ -1010,6 +1010,9 @@ class QtPageFactory:
         apply_input_style(jv_rule)
         jv_rule.setMaxVisibleItems(3)
         self._add_control_row(s_l, "Java 方式", jv_rule)
+        auto_java_cb = CheckBox("找不到时自动下载 Java 到输出目录", s_card)
+        auto_java_cb.setChecked(True)
+        s_l.addWidget(auto_java_cb)
 
         # 缓存
         c_card, c_l = self._create_card("缓存与存储")
@@ -1090,6 +1093,7 @@ class QtPageFactory:
                 server_output_path_edit=sv_op,
                 server_download_source_combo=sv_dl,
                 java_rule_combo=jv_rule,
+                auto_download_java_checkbox=auto_java_cb,
                 cache_path_edit=ca_edit,
                 cache_auto_cleanup_checkbox=ca_cb,
                 theme_combo=th_co,
