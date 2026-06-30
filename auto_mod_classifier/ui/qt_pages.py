@@ -45,6 +45,7 @@ from .qt_theme import (
     FONT_SIZE_XS,
     FONT_SIZE_BASE,
     FONT_SIZE_MD,
+    FONT_SIZE_LG,
     FONT_SIZE_XL,
     INFO_COLOR,
     RADIUS_LG,
@@ -782,24 +783,17 @@ class QtPageFactory:
     def build_report_page(self) -> ReportPageBuild:
         page = TaskPage(
             "reportPage", "结果报告",
-            "回看模组筛选和服务端制作的最近一次结果。",
+            "默认展示最近一次模组筛选预览，完成任务后会自动刷新真实结果。",
             self.app,
         )
 
-        grid = QWidget(page)
-        gl = QGridLayout(grid)
-        gl.setContentsMargins(0, 0, 0, 0)
-        gl.setHorizontalSpacing(SPACING_MD)
-        gl.setVerticalSpacing(SPACING_MD)
-        gl.setColumnStretch(0, 1)
-        gl.setColumnStretch(1, 1)
+        host_card, host_layout = self._create_card("最近结果预览", "没开始运行时显示固定提示，任务完成后自动切换为真实结果。")
 
-        # 模组结果卡片
         mod_card, mod_l = self._create_card("模组筛选结果")
         mod_sr = QHBoxLayout()
         mod_sr.setSpacing(SPACING_SM)
         mod_sd = StatusDot(mod_card)
-        mod_st = StrongBodyLabel("还没有最近结果", mod_card)
+        mod_st = StrongBodyLabel("还没有开始模组筛选", mod_card)
         apply_themed_style(
             mod_st,
             lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
@@ -811,38 +805,65 @@ class QtPageFactory:
         apply_label_tone(mod_tm, muted=True, size=FONT_SIZE_XS)
         mod_sum = PlainTextEdit(mod_card)
         mod_sum.setReadOnly(True)
-        mod_sum.setMinimumHeight(140)
-        mod_sum.setMaximumHeight(180)
-        mod_sum.setPlainText("完成一次筛选后显示摘要。")
+        mod_sum.setMinimumHeight(88)
+        mod_sum.setMaximumHeight(120)
+        mod_sum.setPlainText("这里会显示最近一次模组筛选的摘要。")
         apply_read_only_editor_style(mod_sum)
+
+        mod_empty = QWidget(mod_card)
+        mod_empty_layout = QVBoxLayout(mod_empty)
+        mod_empty_layout.setContentsMargins(0, 0, 0, 0)
+        mod_empty_layout.setSpacing(SPACING_XS)
+        mod_empty_title = StrongBodyLabel("还没有可预览的模组结果", mod_empty)
+        apply_themed_style(
+            mod_empty_title,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_LG}px; font-weight: 600;",
+        )
+        mod_empty_body = BodyLabel("先去“模组筛选”页面运行一次脚本。完成后，这里会自动铺开显示文件名、分类结果、判定来源和判定原因。", mod_empty)
+        mod_empty_body.setWordWrap(True)
+        apply_label_tone(mod_empty_body, muted=True, size=FONT_SIZE_XS)
+        mod_empty_layout.addStretch(1)
+        mod_empty_layout.addWidget(mod_empty_title)
+        mod_empty_layout.addWidget(mod_empty_body)
+        mod_empty_layout.addStretch(1)
+
+        mod_preview = QWidget(mod_card)
+        mod_preview_layout = QVBoxLayout(mod_preview)
+        mod_preview_layout.setContentsMargins(0, 0, 0, 0)
+        mod_preview_layout.setSpacing(SPACING_SM)
+        mod_hint = BodyLabel("默认按待确认和关键条目优先展示，完整结果仍可从目录里打开。", mod_preview)
+        mod_hint.setWordWrap(True)
+        apply_label_tone(mod_hint, muted=True, size=FONT_SIZE_XS)
+        mod_table = build_result_table(mod_preview)
+        mod_table.setMinimumHeight(420)
+        mod_preview_layout.addWidget(mod_hint)
+        mod_preview_layout.addWidget(mod_table, 1)
+        mod_preview.setVisible(False)
 
         mod_l.addLayout(mod_sr)
         mod_l.addWidget(mod_tm)
         mod_l.addWidget(mod_sum)
+        mod_l.addWidget(mod_empty, 1)
+        mod_l.addWidget(mod_preview, 1)
 
         mod_br = QHBoxLayout()
         mod_br.addStretch(1)
-        mrb = PushButton("打开目录", mod_card)
+        mrb = PushButton("打开结果目录", mod_card)
         mrb.setObjectName("smallButton")
         mrb.setEnabled(False)
         mrb.clicked.connect(lambda: self.app.open_report_path("mod", "result"))
         mod_br.addWidget(mrb)
-        mlb = PushButton("查看日志", mod_card)
+        mlb = PushButton("返回模组筛选", mod_card)
         mlb.setObjectName("smallButton")
         mlb.clicked.connect(lambda: self.app.open_page(self.app.mod_page))
         mod_br.addWidget(mlb)
-        mpb = PushButton("返回页面", mod_card)
-        mpb.setObjectName("smallButton")
-        mpb.clicked.connect(lambda: self.app.open_page(self.app.mod_page))
-        mod_br.addWidget(mpb)
         mod_l.addLayout(mod_br)
 
-        # 开服结果卡片
         sv_card, sv_l = self._create_card("一键开服结果")
         sv_sr = QHBoxLayout()
         sv_sr.setSpacing(SPACING_SM)
         sv_sd = StatusDot(sv_card)
-        sv_st = StrongBodyLabel("还没有最近结果", sv_card)
+        sv_st = StrongBodyLabel("还没有开始一键开服", sv_card)
         apply_themed_style(
             sv_st,
             lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
@@ -854,36 +875,41 @@ class QtPageFactory:
         apply_label_tone(sv_tm, muted=True, size=FONT_SIZE_XS)
         sv_sum = PlainTextEdit(sv_card)
         sv_sum.setReadOnly(True)
-        sv_sum.setMinimumHeight(140)
-        sv_sum.setMaximumHeight(180)
-        sv_sum.setPlainText("完成一次制作后显示摘要。")
+        sv_sum.setMinimumHeight(220)
+        sv_sum.setPlainText("先去“一键开服”页面运行一次脚本。完成后，这里会显示最近一次制作摘要和结果目录入口。")
         apply_read_only_editor_style(sv_sum)
 
         sv_l.addLayout(sv_sr)
         sv_l.addWidget(sv_tm)
-        sv_l.addWidget(sv_sum)
+        sv_l.addWidget(sv_sum, 1)
 
         sv_br = QHBoxLayout()
         sv_br.addStretch(1)
-        srb = PushButton("打开目录", sv_card)
+        srb = PushButton("打开结果目录", sv_card)
         srb.setObjectName("smallButton")
         srb.setEnabled(False)
         srb.clicked.connect(lambda: self.app.open_report_path("server", "result"))
         sv_br.addWidget(srb)
-        seb = PushButton("查看日志", sv_card)
+        seb = PushButton("打开日志目录", sv_card)
         seb.setObjectName("smallButton")
         seb.setEnabled(False)
         seb.clicked.connect(lambda: self.app.open_report_path("server", "extra"))
         sv_br.addWidget(seb)
-        spb = PushButton("返回页面", sv_card)
+        spb = PushButton("返回一键开服", sv_card)
         spb.setObjectName("smallButton")
         spb.clicked.connect(lambda: self.app.open_page(self.app.server_page))
         sv_br.addWidget(spb)
         sv_l.addLayout(sv_br)
 
-        gl.addWidget(mod_card, 0, 0)
-        gl.addWidget(sv_card, 0, 1)
-        page.container_layout.addWidget(grid)
+        tab_host, _, _ = build_tab_host(
+            host_card,
+            [
+                ("mod-result", "模组筛选结果", mod_card),
+                ("server-result", "一键开服结果", sv_card),
+            ],
+        )
+        host_layout.addWidget(tab_host)
+        page.container_layout.addWidget(host_card)
         page.container_layout.addStretch(1)
 
         return ReportPageBuild(
@@ -896,6 +922,12 @@ class QtPageFactory:
                     summary_edit=mod_sum,
                     result_button=mrb,
                     extra_button=None,
+                    empty_state_widget=mod_empty,
+                    empty_state_title=mod_empty_title,
+                    empty_state_body=mod_empty_body,
+                    preview_widget=mod_preview,
+                    preview_table=mod_table,
+                    preview_hint_label=mod_hint,
                 ),
                 "server": ReportSectionState(
                     status_dot=sv_sd,

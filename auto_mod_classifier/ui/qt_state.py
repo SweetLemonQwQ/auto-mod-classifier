@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional, TYPE_CHECKING
 
+from PySide6.QtWidgets import QWidget
 from qfluentwidgets import (
     BodyLabel,
     CheckBox,
@@ -41,6 +42,12 @@ class ReportSectionState:
     summary_edit: PlainTextEdit
     result_button: PushButton
     extra_button: Optional[PushButton]
+    empty_state_widget: Optional[QWidget] = None
+    empty_state_title: Optional[StrongBodyLabel] = None
+    empty_state_body: Optional[BodyLabel] = None
+    preview_widget: Optional[QWidget] = None
+    preview_table: Optional[TableWidget] = None
+    preview_hint_label: Optional[BodyLabel] = None
     result_dir: Optional[Path] = None
     extra_dir: Optional[Path] = None
 

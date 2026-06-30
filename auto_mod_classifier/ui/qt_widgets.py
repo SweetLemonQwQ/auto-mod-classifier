@@ -559,5 +559,5 @@ def populate_result_row(table: TableWidget, row_index: int, values: List[str]) -
     for ci, value in enumerate(values):
         item = QTableWidgetItem(value)
         item.setToolTip(value)
-        item.setForeground(QBrush(QColor(TEXT_PRIMARY)))
+        item.setForeground(QBrush(QColor(qt_theme.TEXT_PRIMARY)))
         table.setItem(row_index, ci, item)

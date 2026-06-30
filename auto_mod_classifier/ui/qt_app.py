@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import os
 import queue
@@ -788,6 +789,80 @@ class App(FluentWindow):
                 f"已读取 {len(rows)} 条分类结果，当前预览前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。"
             )
 
+    def _load_report_preview(self, section: ReportSectionState) -> None:
+        if section.preview_table is None:
+            return
+
+        table = section.preview_table
+        table.clearContents()
+        table.setRowCount(0)
+
+        if section.preview_widget is not None:
+            section.preview_widget.setVisible(False)
+        if section.empty_state_widget is not None:
+            section.empty_state_widget.setVisible(True)
+        if section.preview_hint_label is not None:
+            section.preview_hint_label.setText("默认按待确认和关键条目优先展示，完整结果仍可从目录里打开。")
+        if section.empty_state_title is not None:
+            section.empty_state_title.setText("还没有可预览的模组结果")
+        if section.empty_state_body is not None:
+            section.empty_state_body.setText("先去“模组筛选”页面运行一次脚本。完成后，这里会自动铺开显示文件名、分类结果、判定来源和判定原因。")
+
+        result_dir = section.result_dir
+        if not result_dir:
+            return
+
+        csv_path = result_dir / "分类报告.csv"
+        if not csv_path.exists():
+            if section.empty_state_title is not None:
+                section.empty_state_title.setText("最近结果里还没有 CSV 报告")
+            if section.empty_state_body is not None:
+                section.empty_state_body.setText("脚本已经执行过，但当前结果目录里没找到 `分类报告.csv`，可以先打开结果目录检查导出是否完整。")
+            return
+
+        try:
+            with csv_path.open("r", encoding="utf-8-sig", newline="") as fp:
+                rows = list(csv.DictReader(fp))
+        except Exception as exc:
+            if section.empty_state_title is not None:
+                section.empty_state_title.setText("读取 CSV 结果失败")
+            if section.empty_state_body is not None:
+                section.empty_state_body.setText(f"当前无法读取 `分类报告.csv`：{exc}")
+            return
+
+        if not rows:
+            if section.empty_state_title is not None:
+                section.empty_state_title.setText("CSV 报告里还没有内容")
+            if section.empty_state_body is not None:
+                section.empty_state_body.setText("这次导出的 `分类报告.csv` 还是空的，暂时没有可以铺开的分类明细。")
+            return
+
+        priority = {"无法分类": 0, "服务端保留": 1, "纯客户端移出": 2}
+        ordered_rows = sorted(rows, key=lambda row: priority.get(str(row.get("分类结果", "")), 9))
+        preview_rows = ordered_rows[:60]
+        table.setRowCount(len(preview_rows))
+        for row_index, row in enumerate(preview_rows):
+            populate_result_row(
+                table,
+                row_index,
+                [
+                    str(row.get("文件名", "")),
+                    str(row.get("分类结果", "")),
+                    str(row.get("判定来源", "")),
+                    str(row.get("判定原因", "")),
+                ],
+            )
+
+        if section.preview_hint_label is not None:
+            unknown_count = sum(1 for row in rows if str(row.get("分类结果", "")) == "无法分类")
+            section.preview_hint_label.setText(
+                f"已读取 {len(rows)} 条 CSV 结果，当前预览前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。"
+            )
+        if section.empty_state_widget is not None:
+            section.empty_state_widget.setVisible(False)
+        if section.preview_widget is not None:
+            section.preview_widget.setVisible(True)
+
     def _update_report_section(
         self,
         panel_key: str,
@@ -808,6 +883,8 @@ class App(FluentWindow):
         section.result_button.setEnabled(bool(result_dir))
         if section.extra_button is not None:
             section.extra_button.setEnabled(bool(extra_dir))
+        if panel_key == "mod":
+            self._load_report_preview(section)
 
     def _refresh_home_overview(
         self,
@@ -834,8 +911,21 @@ class App(FluentWindow):
                 self.home_widgets.server_output_label.setText(f"输出位置：{output}")
 
     def _refresh_report_sections(self) -> None:
-        for section in self.report_sections.values():
+        for panel_key, section in self.report_sections.items():
             section.status_dot.set_state("idle")
+            if panel_key == "mod":
+                section.status_label.setText("还没有开始模组筛选")
+                section.summary_edit.setPlainText("这里会显示最近一次模组筛选的摘要。")
+                section.time_label.setText("最近时间：暂无")
+                section.result_dir = None
+                section.extra_dir = None
+                self._load_report_preview(section)
+            elif panel_key == "server":
+                section.status_label.setText("还没有开始一键开服")
+                section.summary_edit.setPlainText("先去“一键开服”页面运行一次脚本。完成后，这里会显示最近一次制作摘要和结果目录入口。")
+                section.time_label.setText("最近时间：暂无")
+                section.result_dir = None
+                section.extra_dir = None
             section.result_button.setEnabled(False)
             if section.extra_button is not None:
                 section.extra_button.setEnabled(False)
