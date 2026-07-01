@@ -915,7 +915,7 @@ class App(FluentWindow):
 
         priority = {"unknown": 0, "server-keep": 1, "client-only": 2}
         ordered_rows = sorted(rows, key=lambda row: priority.get(row.get("Category", ""), 9))
-        preview_rows = ordered_rows[:40]
+        preview_rows = ordered_rows
         table.setRowCount(len(preview_rows))
 
         for row_index, row in enumerate(preview_rows):
@@ -933,7 +933,7 @@ class App(FluentWindow):
         if hint_label is not None:
             unknown_count = sum(1 for row in rows if row.get("Category") == "unknown")
             hint_label.setText(
-                f"共读取 {len(rows)} 条分类结果，当前显示前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。"
+                f"共读取 {len(rows)} 条分类结果，已全部显示，其中待确认 {unknown_count} 条。"
             )
 
     def _load_report_preview(self, section: ReportSectionState) -> None:
@@ -947,7 +947,7 @@ class App(FluentWindow):
         if section.preview_widget is not None:
             section.preview_widget.setVisible(True)
         if section.preview_hint_label is not None:
-            section.preview_hint_label.setText("结果会优先展示待确认和重点内容，点击文件名可直接复制。")
+            section.preview_hint_label.setText("这里会显示 CSV 中的全部结果，点击文件名可直接复制。")
 
         panel_key = self._find_report_section_key(section)
         if panel_key is None:
@@ -988,7 +988,7 @@ class App(FluentWindow):
 
         priority = {"无法分类": 0, "服务端保留": 1, "纯客户端移出": 2}
         ordered_rows = sorted(rows, key=lambda row: priority.get(str(row.get("分类结果", "")), 9))
-        preview_rows = ordered_rows[:60]
+        preview_rows = ordered_rows
         table.setRowCount(len(preview_rows))
         for row_index, row in enumerate(preview_rows):
             category_value = str(row.get("分类结果", ""))
@@ -1008,7 +1008,7 @@ class App(FluentWindow):
         if section.preview_hint_label is not None:
             unknown_count = sum(1 for row in rows if str(row.get("分类结果", "")) == "无法分类")
             section.preview_hint_label.setText(
-                f"共读取 {len(rows)} 条结果，当前显示前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。点击文件名可复制。"
+                f"共读取 {len(rows)} 条结果，已全部显示，其中待确认 {unknown_count} 条。点击文件名可复制。"
             )
 
     def _find_report_section_key(self, target_section: ReportSectionState) -> Optional[str]:
