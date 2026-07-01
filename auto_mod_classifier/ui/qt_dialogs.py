@@ -259,7 +259,7 @@ class VersionSelectionDialog(QDialog):
         )
         header_layout.addWidget(title_label)
 
-        hint = BodyLabel("检测到多个可用版本，请选择要制作服务端的客户端版本。")
+        hint = BodyLabel("检测到多个可用版本，请选择本次要使用的客户端版本。")
         hint.setWordWrap(True)
         apply_label_tone(hint, level=2, size=FONT_SIZE_MD)
         header_layout.addWidget(hint)
@@ -267,7 +267,7 @@ class VersionSelectionDialog(QDialog):
 
         table = QTableWidget(len(candidates), 6, self)
         table.setObjectName("versionSelectionTable")
-        table.setHorizontalHeaderLabels(["版本ID", "Minecraft", "加载器", "加载器版本", "Java", "版本文件"])
+        table.setHorizontalHeaderLabels(["版本标识", "Minecraft", "加载器", "加载器版本", "Java", "版本来源"])
         table.verticalHeader().setVisible(False)
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.setSelectionMode(QTableWidget.SingleSelection)
@@ -417,7 +417,7 @@ class ChecklistDialog(QDialog):
         select_none_button.clicked.connect(self.select_none)
         actions_layout.addWidget(select_none_button)
 
-        self.copy_status_label = BodyLabel("提示：左键点击具体条目的文件名可直接复制；大分类标题不再提供复制。")
+        self.copy_status_label = BodyLabel("点击具体条目的文件名即可复制，分类标题不提供复制操作。")
         self.copy_status_label.setWordWrap(True)
         apply_label_tone(self.copy_status_label, muted=True, size=FONT_SIZE_SM)
         actions_layout.addWidget(self.copy_status_label, 1)
@@ -476,7 +476,7 @@ class ChecklistDialog(QDialog):
                     lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
                 )
                 top_layout.addWidget(checkbox, 1)
-                copy_button = PushButton("复制名称", row)
+                copy_button = PushButton("复制文件名", row)
                 copy_button.setObjectName("smallButton")
                 copy_button.clicked.connect(lambda _checked=False, text=item.label: self.copy_item_text(text))
                 top_layout.addWidget(copy_button, 0, Qt.AlignRight)

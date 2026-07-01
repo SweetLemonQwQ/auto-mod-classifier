@@ -279,7 +279,7 @@ class QtPageFactory:
         dl.setWordWrap(True)
         apply_label_tone(dl, muted=True, size=FONT_SIZE_XS)
         info_row.addWidget(dl, 1)
-        ol = BodyLabel("输出位置：尚未运行", card)
+        ol = BodyLabel("输出位置：暂未生成", card)
         ol.setWordWrap(True)
         ol.setTextInteractionFlags(Qt.TextSelectableByMouse)
         apply_label_tone(ol, muted=True, size=FONT_SIZE_XS)
@@ -318,7 +318,7 @@ class QtPageFactory:
         summary_edit = PlainTextEdit(summary_page)
         summary_edit.setReadOnly(True)
         summary_edit.setMaximumBlockCount(500)
-        summary_edit.setPlainText("任务完成后显示摘要。")
+        summary_edit.setPlainText("任务完成后，这里会显示本次处理摘要。")
         apply_read_only_editor_style(summary_edit)
         summary_layout.addWidget(summary_edit)
 
@@ -328,7 +328,7 @@ class QtPageFactory:
         log_edit = LiveLogEdit(log_page)
         log_edit.setReadOnly(True)
         log_edit.setMaximumBlockCount(1500)
-        log_edit.setPlainText("等待任务开始。")
+        log_edit.setPlainText("等待开始处理。")
         apply_read_only_editor_style(log_edit, console=True)
         log_layout.addWidget(log_edit)
 
@@ -340,7 +340,7 @@ class QtPageFactory:
         result_layout.setContentsMargins(0, 0, 0, 0)
         result_layout.setSpacing(SPACING_SM)
 
-        hint_label = BodyLabel("结果将在任务完成后展示。", result_page)
+        hint_label = BodyLabel("处理完成后，这里会显示结果明细。", result_page)
         hint_label.setWordWrap(True)
         apply_label_tone(hint_label, muted=True, size=FONT_SIZE_XS)
         result_layout.addWidget(hint_label)
@@ -355,13 +355,13 @@ class QtPageFactory:
     # ═══════════════════════════════════════════
     def build_home_page(self) -> HomePageBuild:
         page = TaskPage(
-            "homePage", "工作台",
-            "快速启动模组筛选、制作服务端，回看最近结果。",
+            "homePage", "首页",
+            "快速开始模组整理或服务端制作，并查看最近一次处理结果。",
             self.app,
         )
 
         # 三大入口卡片
-        section_title = StrongBodyLabel("开始工作", page)
+        section_title = StrongBodyLabel("快速开始", page)
         apply_themed_style(
             section_title,
             lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
@@ -376,7 +376,7 @@ class QtPageFactory:
         quick_host.setLayout(action_row)
 
         mod_action = ActionCard(
-            "模组筛选", "识别服务端保留、纯客户端和待确认模组",
+            "模组筛选", "自动区分可保留、可移除和需要确认的模组",
             "开始筛选", quick_host,
             icon=FIF.ZIP_FOLDER, primary=True,
         )
@@ -386,7 +386,7 @@ class QtPageFactory:
         action_row.addWidget(mod_action, 1)
 
         server_action = ActionCard(
-            "一键开服", "从客户端或整合包自动搭建服务端",
+            "一键开服", "从客户端或整合包快速生成可用的服务端",
             "开始制作", quick_host,
             icon=FIF.COMMAND_PROMPT,
         )
@@ -396,8 +396,8 @@ class QtPageFactory:
         action_row.addWidget(server_action, 1)
 
         report_action = ActionCard(
-            "结果报告", "查看历史运行结果、日志和输出目录",
-            "查看结果", quick_host,
+            "处理结果", "查看最近一次处理摘要、明细和输出目录",
+            "查看详情", quick_host,
             icon=FIF.DOCUMENT,
         )
         report_action.button.clicked.connect(
@@ -407,7 +407,7 @@ class QtPageFactory:
         page.container_layout.addWidget(quick_host, 3)
 
         # 最近状态
-        status_title = StrongBodyLabel("最近状态", page)
+        status_title = StrongBodyLabel("最近处理", page)
         apply_themed_style(
             status_title,
             lambda: f"color: {qt_theme.TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_XS}px;"
@@ -427,7 +427,7 @@ class QtPageFactory:
         mod_card, mod_gl = self._create_card("模组筛选")
         mod_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         mod_status_dot = StatusDot(mod_card)
-        mod_status_label = StrongBodyLabel("待运行", mod_card)
+        mod_status_label = StrongBodyLabel("未开始", mod_card)
         apply_themed_style(
             mod_status_label,
             lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
@@ -449,11 +449,11 @@ class QtPageFactory:
 
         mbr = QHBoxLayout()
         mbr.addStretch(1)
-        mrb = PushButton("查看结果", mod_card)
+        mrb = PushButton("查看详情", mod_card)
         mrb.setObjectName("smallButton")
         mrb.clicked.connect(lambda: self.app.open_page(self.app.report_page))
         mbr.addWidget(mrb)
-        mab = PushButton("再次运行", mod_card)
+        mab = PushButton("前往处理", mod_card)
         mab.setObjectName("smallButton")
         mab.clicked.connect(lambda: self.app.open_page(self.app.mod_page))
         mbr.addWidget(mab)
@@ -463,7 +463,7 @@ class QtPageFactory:
         server_card, srv_gl = self._create_card("一键开服")
         srv_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         server_status_dot = StatusDot(server_card)
-        server_status_label = StrongBodyLabel("待运行", server_card)
+        server_status_label = StrongBodyLabel("未开始", server_card)
         apply_themed_style(
             server_status_label,
             lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
@@ -485,11 +485,11 @@ class QtPageFactory:
 
         sbr = QHBoxLayout()
         sbr.addStretch(1)
-        srb = PushButton("查看结果", server_card)
+        srb = PushButton("查看详情", server_card)
         srb.setObjectName("smallButton")
         srb.clicked.connect(lambda: self.app.open_page(self.app.report_page))
         sbr.addWidget(srb)
-        sab = PushButton("再次运行", server_card)
+        sab = PushButton("前往处理", server_card)
         sab.setObjectName("smallButton")
         sab.clicked.connect(lambda: self.app.open_page(self.app.server_page))
         sbr.addWidget(sab)
@@ -501,7 +501,7 @@ class QtPageFactory:
 
         page.container_layout.addStretch()
 
-        tip = BodyLabel("支持文件夹、.mrpack、.zip，可直接拖入窗口。", page)
+        tip = BodyLabel("支持文件夹、.mrpack 和 .zip 文件，也可以直接拖入窗口。", page)
         tip.setAlignment(Qt.AlignCenter)
         apply_label_tone(tip, muted=True, size=10)
         page.container_layout.addWidget(tip)
@@ -526,7 +526,7 @@ class QtPageFactory:
     def build_mod_page(self) -> ModPageBuild:
         page = TaskPage(
             "modPage", "模组筛选",
-            "选择输入源后启动筛选，结果和日志在右侧实时展示。",
+            "选择输入源后开始整理，右侧会实时显示进度和处理记录。",
             self.app,
         )
         left_col, left_layout, right_col, right_layout = self._build_task_workspace(page)
@@ -547,11 +547,11 @@ class QtPageFactory:
             )
         )
 
-        out_card, out_gl = self._create_card("输出目录", "不填就按后端默认输出到当前模组同目录；填写后直接输出到指定目录。", variant="subtle")
+        out_card, out_gl = self._create_card("输出目录", "留空时将自动保存到输入目录附近；填写后会保存到指定位置。", variant="subtle")
         out_card.setParent(left_col)
         out_gl.setContentsMargins(SPACING_MD + 2, SPACING_SM + 2, SPACING_MD + 2, SPACING_SM + 2)
         mod_out_edit = LineEdit(out_card)
-        mod_out_edit.setPlaceholderText("可选：选择模组筛选结果输出目录")
+        mod_out_edit.setPlaceholderText("可选：选择结果保存位置")
         mod_out_edit.setClearButtonEnabled(True)
         apply_input_style(mod_out_edit)
         out_gl.addWidget(mod_out_edit)
@@ -565,16 +565,16 @@ class QtPageFactory:
             [
                 ("scan", "读取目录"),
                 ("classify", "首轮筛选"),
-                ("second-pass", "补查确认"),
+                ("second-pass", "进一步确认"),
                 ("complete", "完成"),
             ],
             left_col,
         )
         metric_row = QHBoxLayout()
         metric_row.setSpacing(SPACING_SM)
-        mk = MetricCard("服务端保留", "--", "可留在服务端", accent_color=INFO_COLOR)
-        mc = MetricCard("纯客户端", "--", "可从服务端移出", accent_color=SUCCESS_COLOR)
-        mu = MetricCard("待确认", "--", "建议人工查看", accent_color=WARNING_COLOR)
+        mk = MetricCard("服务端保留", "--", "建议保留在服务端", accent_color=INFO_COLOR)
+        mc = MetricCard("纯客户端", "--", "建议从服务端移出", accent_color=SUCCESS_COLOR)
+        mu = MetricCard("待确认", "--", "建议手动确认", accent_color=WARNING_COLOR)
         metric_row.addWidget(mk, 1)
         metric_row.addWidget(mc, 1)
         metric_row.addWidget(mu, 1)
@@ -595,7 +595,7 @@ class QtPageFactory:
         (
             sc, msd, msl, mstat, mpb, mpv, mdl, mol, mrb, _mrp,
         ) = self._build_status_card(
-            "运行状态", "选择输入源后开始筛选。",
+            "处理状态", "选择输入源后即可开始整理。",
             "打开结果目录",
             lambda: self.app.open_panel_path("mod", "result"),
             lambda: self.app.open_page(self.app.report_page),
@@ -603,7 +603,7 @@ class QtPageFactory:
         )
         right_layout.addWidget(sc, 1)
 
-        prev_card, prev_gl = self._create_card("实时日志", "只保留真实滚动日志，方便盯住当前进度。")
+        prev_card, prev_gl = self._create_card("处理记录", "这里会持续显示当前进度和处理详情。")
         prev_card.setParent(right_col)
         result_page, mod_summary, mod_log, mod_table, mod_hint = self._build_log_pages(
             prev_card, with_result_table=True,
@@ -650,7 +650,7 @@ class QtPageFactory:
     def build_server_page(self) -> ServerPageBuild:
         page = TaskPage(
             "serverPage", "一键开服",
-            "选择客户端输入源和服务端输出目录，左侧配置右侧查看进度。",
+            "选择客户端来源和服务端输出目录，右侧会实时显示当前进度。",
             self.app,
         )
         left_col, left_layout, right_col, right_layout = self._build_task_workspace(page)
@@ -697,9 +697,9 @@ class QtPageFactory:
         )
         metric_row = QHBoxLayout()
         metric_row.setSpacing(SPACING_SM)
-        metric_keep = MetricCard("服务端保留", "--", "识别为服务端可用", accent_color=INFO_COLOR)
-        metric_client = MetricCard("纯客户端", "--", "识别为仅客户端", accent_color=SUCCESS_COLOR)
-        metric_final = MetricCard("最终复制", "--", "实际进入服务端", accent_color=WARNING_COLOR)
+        metric_keep = MetricCard("服务端保留", "--", "识别为可用于服务端", accent_color=INFO_COLOR)
+        metric_client = MetricCard("纯客户端", "--", "识别为仅客户端内容", accent_color=SUCCESS_COLOR)
+        metric_final = MetricCard("最终复制", "--", "最终写入服务端的文件数", accent_color=WARNING_COLOR)
         metric_row.addWidget(metric_keep, 1)
         metric_row.addWidget(metric_client, 1)
         metric_row.addWidget(metric_final, 1)
@@ -719,7 +719,7 @@ class QtPageFactory:
         (
             status_card, ssd, ssl, sstat, spb, spv, sdl, sol, srb, _srp,
         ) = self._build_status_card(
-            "运行状态", "选择输入源和输出目录后开始制作。",
+            "处理状态", "确认输入源和输出目录后即可开始制作。",
             "打开服务端目录",
             lambda: self.app.open_panel_path("server", "result"),
             lambda: self.app.open_page(self.app.report_page),
@@ -727,7 +727,7 @@ class QtPageFactory:
         )
         right_layout.addWidget(status_card, 1)
 
-        prev_card, prev_gl = self._create_card("实时日志", "只显示制作过程中的真实滚动日志。")
+        prev_card, prev_gl = self._create_card("处理记录", "这里会持续显示制作过程和当前进度。")
         prev_card.setParent(right_col)
         _, srv_summary, srv_log, _, _ = self._build_log_pages(
             prev_card, with_result_table=False,
@@ -770,8 +770,8 @@ class QtPageFactory:
     # ═══════════════════════════════════════════
     def build_report_page(self) -> ReportPageBuild:
         page = TaskPage(
-            "reportPage", "结果报告",
-            "自动显示最近一次完成任务的真实结果，页面本身不再整页滚动。",
+            "reportPage", "处理结果",
+            "这里会显示最近一次处理的摘要、明细和输出位置。",
             self.app,
         )
 
@@ -779,7 +779,7 @@ class QtPageFactory:
         mod_sr = QHBoxLayout()
         mod_sr.setSpacing(SPACING_SM)
         mod_sd = StatusDot(mod_card)
-        mod_st = StrongBodyLabel("还没有开始模组筛选", mod_card)
+        mod_st = StrongBodyLabel("尚未开始模组筛选", mod_card)
         apply_themed_style(
             mod_st,
             lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
@@ -796,7 +796,7 @@ class QtPageFactory:
         mod_sum.setReadOnly(True)
         mod_sum.setMinimumHeight(72)
         mod_sum.setMaximumHeight(96)
-        mod_sum.setPlainText("这里会显示最近一次模组筛选的摘要。")
+        mod_sum.setPlainText("这里会显示最近一次模组筛选的处理摘要。")
         apply_read_only_editor_style(mod_sum)
         apply_themed_style(
             mod_sum,
@@ -813,7 +813,7 @@ class QtPageFactory:
         mod_preview_layout = QVBoxLayout(mod_preview)
         mod_preview_layout.setContentsMargins(0, 0, 0, 0)
         mod_preview_layout.setSpacing(SPACING_SM)
-        mod_hint = BodyLabel("还没有开始模组筛选。先运行一次脚本，完成后这里会自动显示真实结果。", mod_preview)
+        mod_hint = BodyLabel("尚未生成模组筛选结果。完成一次处理后，这里会自动显示结果明细。", mod_preview)
         mod_hint.setWordWrap(True)
         apply_themed_style(
             mod_hint,
@@ -847,7 +847,7 @@ class QtPageFactory:
         sv_sr = QHBoxLayout()
         sv_sr.setSpacing(SPACING_SM)
         sv_sd = StatusDot(sv_card)
-        sv_st = StrongBodyLabel("还没有开始一键开服", sv_card)
+        sv_st = StrongBodyLabel("尚未开始一键开服", sv_card)
         apply_themed_style(
             sv_st,
             lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 600;",
@@ -864,7 +864,7 @@ class QtPageFactory:
         sv_sum.setReadOnly(True)
         sv_sum.setMinimumHeight(72)
         sv_sum.setMaximumHeight(96)
-        sv_sum.setPlainText("先去“一键开服”页面运行一次脚本。完成后，这里会显示最近一次制作摘要和结果目录入口。")
+        sv_sum.setPlainText("完成一次服务端制作后，这里会显示最近一次处理摘要和输出入口。")
         apply_read_only_editor_style(sv_sum)
         apply_themed_style(
             sv_sum,
@@ -881,7 +881,7 @@ class QtPageFactory:
         sv_preview_layout = QVBoxLayout(sv_preview)
         sv_preview_layout.setContentsMargins(0, 0, 0, 0)
         sv_preview_layout.setSpacing(SPACING_SM)
-        sv_hint = BodyLabel("还没有开始一键开服。先运行一次脚本，完成后这里会自动显示真实结果。", sv_preview)
+        sv_hint = BodyLabel("尚未生成服务端制作结果。完成一次处理后，这里会自动显示结果明细。", sv_preview)
         sv_hint.setWordWrap(True)
         apply_themed_style(
             sv_hint,
@@ -958,7 +958,7 @@ class QtPageFactory:
     def build_settings_page(self) -> SettingsPageBuild:
         page = ScrollablePage(
             "settingsPage", "设置",
-            "调整筛选规则、开服默认值、缓存和界面偏好。",
+            "调整处理规则、默认路径、缓存清理和界面显示方式。",
             self.app,
         )
 
@@ -975,14 +975,14 @@ class QtPageFactory:
         f_l.setSpacing(SPACING_SM)
         f_dl = self._build_download_source_combo()
         self._add_control_row(f_l, "下载源", f_dl)
-        f_dry = CheckBox("仅试运行模组筛选，不移动原文件", f_card)
+        f_dry = CheckBox("仅预览模组筛选结果，不移动原文件", f_card)
         f_dry.setChecked(False)
         f_l.addWidget(f_dry)
         f_mc = CheckBox("查询 MC百科", f_card)
         f_mc.setChecked(True)
         f_cf = CheckBox("查询 CurseForge", f_card)
-        f_sp = CheckBox("启用补查确认", f_card)
-        f_mr = CheckBox("保留人工确认提示", f_card)
+        f_sp = CheckBox("启用进一步确认", f_card)
+        f_mr = CheckBox("保留手动确认提示", f_card)
         f_mr.setChecked(True)
         for cb in (f_mc, f_cf, f_sp, f_mr):
             f_l.addWidget(cb)
@@ -994,7 +994,7 @@ class QtPageFactory:
         sv_op.setPlaceholderText("默认输出目录")
         sv_op.setClearButtonEnabled(True)
         apply_input_style(sv_op)
-        self._add_control_row(s_l, "默认输出目录", sv_op, "浏览输出目录时会优先打开这里。")
+        self._add_control_row(s_l, "默认输出目录", sv_op, "选择输出目录时，会优先定位到这里。")
         sv_dl = self._build_download_source_combo()
         self._add_control_row(s_l, "默认下载源", sv_dl)
         jv_rule = ComboBox(s_card)
@@ -1002,8 +1002,8 @@ class QtPageFactory:
             jv_rule.addItem(t)
         apply_input_style(jv_rule)
         jv_rule.setMaxVisibleItems(3)
-        self._add_control_row(s_l, "Java 方式", jv_rule)
-        auto_java_cb = CheckBox("找不到时自动下载 Java 到输出目录", s_card)
+        self._add_control_row(s_l, "Java 选择", jv_rule)
+        auto_java_cb = CheckBox("找不到合适版本时，自动下载 Java 到输出目录", s_card)
         auto_java_cb.setChecked(True)
         s_l.addWidget(auto_java_cb)
         boot_timeout_combo = ComboBox(s_card)
@@ -1015,7 +1015,7 @@ class QtPageFactory:
             s_l,
             "启动超时",
             boot_timeout_combo,
-            "智能等待：90 秒无新日志才判卡住，支持超时后继续等待 2 分钟；固定 90 秒：到时直接停止。",
+            "智能等待会根据处理进度自动延长；固定时长会在达到上限后停止等待。",
         )
 
         # 缓存
@@ -1026,7 +1026,7 @@ class QtPageFactory:
         ca_edit.setClearButtonEnabled(True)
         apply_input_style(ca_edit)
         self._add_control_row(c_l, "缓存路径", ca_edit)
-        ca_cb = CheckBox("启动和退出时自动清理临时缓存", c_card)
+        ca_cb = CheckBox("启动和退出时自动清理缓存", c_card)
         ca_cb.setChecked(True)
         c_l.addWidget(ca_cb)
         cl_btn = PushButton("清理整合包缓存", c_card)
@@ -1046,7 +1046,7 @@ class QtPageFactory:
         th_co.currentIndexChanged.connect(self.app.on_theme_changed)
         self._add_control_row(i_l, "主题", th_co)
         # 缩放比例控件先移除：未实现任何缩放逻辑，避免误导
-        dl_cb = CheckBox("显示详细日志", i_card)
+        dl_cb = CheckBox("显示详细处理记录", i_card)
         dl_cb.setChecked(True)
         an_cb = CheckBox("启用界面动效", i_card)
         an_cb.setChecked(True)
@@ -1065,7 +1065,7 @@ class QtPageFactory:
         action_layout = QHBoxLayout(action_bar)
         action_layout.setContentsMargins(0, 0, 0, 0)
         action_layout.setSpacing(SPACING_SM)
-        action_hint = BodyLabel("修改后点击保存，下次启动会继续使用当前设置。", action_bar)
+        action_hint = BodyLabel("保存后，当前设置会在下次启动时继续生效。", action_bar)
         apply_label_tone(action_hint, muted=True, size=FONT_SIZE_XS)
         action_layout.addWidget(action_hint)
         action_layout.addStretch(1)

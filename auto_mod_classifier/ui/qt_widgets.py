@@ -402,7 +402,7 @@ class StageBoard(QFrame):
                 self.stage_rows[stage_key]["line"] = line
                 track_layout.addWidget(line_filler, 2)
 
-        self.detail_label = BodyLabel("准备就绪", self)
+        self.detail_label = BodyLabel("等待开始", self)
         self.detail_label.setWordWrap(True)
         apply_themed_style(
             self.detail_label,
@@ -418,7 +418,7 @@ class StageBoard(QFrame):
             detail = ""
             self.stage_details[key] = detail
             self._apply_state(key, "pending", detail)
-        self.detail_label.setText("准备就绪")
+        self.detail_label.setText("等待开始")
 
     def activate(self, stage_key: str, detail: str = "") -> None:
         if stage_key not in self.stage_rows:
@@ -637,6 +637,6 @@ def enable_filename_copy(table: TableWidget, status_label: Optional[BodyLabel] =
             return
         QApplication.clipboard().setText(text)
         if status_label is not None:
-            status_label.setText(f"已复制文件名：{text}")
+            status_label.setText(f"已复制：{text}")
 
     table.cellClicked.connect(_copy_filename)

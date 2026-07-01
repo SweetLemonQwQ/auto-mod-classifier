@@ -210,10 +210,10 @@ class App(FluentWindow):
         self.settings_page = settings_build.page
         self.settings_widgets = settings_build.widgets
 
-        self.addSubInterface(self.home_page, FIF.HOME, "工作台")
+        self.addSubInterface(self.home_page, FIF.HOME, "首页")
         self.addSubInterface(self.mod_page, FIF.ZIP_FOLDER, "模组筛选")
         self.addSubInterface(self.server_page, FIF.COMMAND_PROMPT, "一键开服")
-        self.addSubInterface(self.report_page, FIF.DOCUMENT, "结果报告")
+        self.addSubInterface(self.report_page, FIF.DOCUMENT, "处理结果")
         self.addSubInterface(self.settings_page, FIF.SETTING, "设置", position=NavigationItemPosition.BOTTOM)
 
         # 禁用 FluentWindow 内部的页面切换弹出动画（"下方弹出 + OutQuad" 会闪一下），
@@ -371,7 +371,7 @@ class App(FluentWindow):
         self._apply_theme_visuals(self._theme_mode)
         InfoBar.success(
             "设置已保存",
-            "当前设置已经保存，下次启动会继续使用这些值。",
+            "当前设置已保存，下次启动时会继续使用。",
             duration=2500,
             position=InfoBarPosition.TOP_RIGHT,
             parent=self,
@@ -385,14 +385,14 @@ class App(FluentWindow):
         self._save_settings_data(self._settings_data)
         InfoBar.success(
             "设置已重置",
-            "设置已经恢复默认值，并已立即保存。",
+            "设置已恢复默认值，并已立即保存。",
             duration=2500,
             position=InfoBarPosition.TOP_RIGHT,
             parent=self,
         )
 
     def choose_mod_folder(self) -> None:
-        selected = themed_get_existing_directory(self, "选择 mods 目录")
+        selected = themed_get_existing_directory(self, "选择模组文件夹")
         if selected:
             self._require_mod_inputs().path_edit.setText(selected)
 
@@ -444,7 +444,7 @@ class App(FluentWindow):
         cleanup_stale_import_workspaces()
         InfoBar.success(
             "缓存已清理",
-            "整合包残留缓存和临时工作区已经尝试清理。",
+            "已尝试清理整合包缓存和临时目录。",
             duration=2500,
             position=InfoBarPosition.TOP_RIGHT,
             parent=self,
@@ -484,7 +484,7 @@ class App(FluentWindow):
         source_text = mod_inputs.path_edit.text().strip()
         output_text = mod_inputs.output_path_edit.text().strip()
         if not source_text:
-            self.show_warning("请先选择一个 mods 目录、客户端目录或整合包。")
+            self.show_warning("请先选择模组文件夹、客户端目录或整合包。")
             return
 
         source_path = Path(source_text)
@@ -496,7 +496,7 @@ class App(FluentWindow):
 
         assert self.mod_panel is not None
         self.clear_panel("mod")
-        self.mod_panel.status_label.setText("准备开始…")
+        self.mod_panel.status_label.setText("正在准备…")
         self.mod_panel.status_dot.set_state("running")
         self._set_busy_state(True)
         self._refresh_home_overview(panel_key="mod", status="运行中", output=None)
@@ -551,7 +551,7 @@ class App(FluentWindow):
 
         assert self.server_panel is not None
         self.clear_panel("server")
-        self.server_panel.status_label.setText("准备开始…")
+        self.server_panel.status_label.setText("正在准备…")
         self.server_panel.status_dot.set_state("running")
         self._set_busy_state(True)
         self._refresh_home_overview(panel_key="server", status="运行中", output=None)
@@ -592,12 +592,12 @@ class App(FluentWindow):
         self._pending_logs[panel_key] = []
         self._stage_event_mode[panel_key] = False
         panel.log_edit.clear()
-        panel.summary_edit.setPlainText("任务进行中，完成后这里会刷新摘要。")
+        panel.summary_edit.setPlainText("正在处理，请稍候。完成后这里会显示本次摘要。")
         panel.progress_bar.setValue(0)
         panel.progress_value_label.setText("0%")
-        panel.output_label.setText("输出位置：运行中")
+        panel.output_label.setText("输出位置：处理中")
         panel.download_label.setText(build_idle_download_status_text())
-        panel.stage_label.setText("当前阶段：准备开始")
+        panel.stage_label.setText("当前步骤：准备中")
         panel.status_dot.set_state("running")
         if panel.stage_board is not None:
             panel.stage_board.reset()
@@ -612,7 +612,7 @@ class App(FluentWindow):
             panel.result_table.clearContents()
             panel.result_table.setRowCount(0)
         if panel.result_hint_label is not None:
-            panel.result_hint_label.setText("任务进行中，完成后会优先展示待确认和关键条目。")
+            panel.result_hint_label.setText("正在处理。完成后，这里会优先显示需要重点关注的内容。")
 
     def get_panel(self, panel_key: str) -> TaskPanelState:
         if panel_key == "mod":
@@ -635,13 +635,13 @@ class App(FluentWindow):
                 continue
             panel = self.get_panel(panel_key)
             current_text = panel.log_edit.toPlainText().strip()
-            if current_text == "等待任务开始。":
+            if current_text == "等待开始处理。":
                 panel.log_edit.clear()
             panel.log_edit.appendPlainText("\n".join(messages))
             section = self.report_sections.get(panel_key)
             if section is not None and section.log_edit is not None:
                 report_current_text = section.log_edit.toPlainText().strip()
-                if report_current_text == "等待任务开始。":
+                if report_current_text == "等待开始处理。":
                     section.log_edit.clear()
                 section.log_edit.appendPlainText("\n".join(messages))
             messages.clear()
@@ -724,7 +724,7 @@ class App(FluentWindow):
                 panel.output_label.setText(f"输出位置：{payload['output']}")
                 panel.download_label.setText(build_idle_download_status_text())
                 panel.summary_edit.setPlainText(payload.get("summary", payload["status"]))
-                panel.stage_label.setText("当前阶段：已完成")
+                panel.stage_label.setText("当前步骤：已完成")
                 if panel.stage_board is not None:
                     panel.stage_board.finish(payload["status"])
                 panel.result_button.setEnabled(bool(panel.result_dir))
@@ -740,10 +740,10 @@ class App(FluentWindow):
             elif kind == "error":
                 panel.status_label.setText("运行失败")
                 panel.status_dot.set_state("error")
-                panel.output_label.setText("输出位置：失败")
+                panel.output_label.setText("输出位置：未生成")
                 panel.download_label.setText(build_idle_download_status_text())
                 panel.summary_edit.setPlainText(str(payload))
-                panel.stage_label.setText("当前阶段：运行失败")
+                panel.stage_label.setText("当前步骤：处理失败")
                 if panel.stage_board is not None:
                     panel.stage_board.fail(self._summarize_error_text(str(payload)))
                 self.append_log(panel_key, str(payload))
@@ -877,7 +877,7 @@ class App(FluentWindow):
             return
         panel.stage_board.activate(stage_key, str(message))
         stage_title = panel.stage_board.stage_rows[stage_key]["title"].text()
-        panel.stage_label.setText(f"当前阶段：{stage_title}")
+        panel.stage_label.setText(f"当前步骤：{stage_title}")
 
     def _update_stage_by_event(self, panel_key: str, payload: Any) -> None:
         panel = self.get_panel(panel_key)
@@ -890,7 +890,7 @@ class App(FluentWindow):
         self._stage_event_mode[panel_key] = True
         panel.stage_board.activate(stage_key, detail)
         stage_title = panel.stage_board.stage_rows[stage_key]["title"].text()
-        panel.stage_label.setText(f"当前阶段：{stage_title}")
+        panel.stage_label.setText(f"当前步骤：{stage_title}")
 
     def _load_mod_result_preview(self, result_dir: Optional[Path]) -> None:
         if not self.mod_panel or self.mod_panel.result_table is None:
@@ -939,7 +939,7 @@ class App(FluentWindow):
         if hint_label is not None:
             unknown_count = sum(1 for row in rows if row.get("Category") == "unknown")
             hint_label.setText(
-                f"已读取 {len(rows)} 条分类结果，当前预览前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。"
+                f"共读取 {len(rows)} 条分类结果，当前显示前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。"
             )
 
     def _load_report_preview(self, section: ReportSectionState) -> None:
@@ -953,7 +953,7 @@ class App(FluentWindow):
         if section.preview_widget is not None:
             section.preview_widget.setVisible(True)
         if section.preview_hint_label is not None:
-            section.preview_hint_label.setText("默认按待确认和关键条目优先展示，点击文件名可直接复制。")
+            section.preview_hint_label.setText("结果会优先展示待确认和重点内容，点击文件名可直接复制。")
 
         panel_key = self._find_report_section_key(section)
         if panel_key is None:
@@ -967,16 +967,16 @@ class App(FluentWindow):
         if not preview_dir:
             if section.preview_hint_label is not None:
                 if panel_key == "server":
-                    section.preview_hint_label.setText("还没有开始一键开服。先运行一次脚本，完成后这里会自动显示真实结果。")
+                    section.preview_hint_label.setText("尚未生成服务端制作结果。完成一次处理后，这里会自动显示结果明细。")
                 else:
-                    section.preview_hint_label.setText("还没有开始模组筛选。先运行一次脚本，完成后这里会自动显示真实结果。")
+                    section.preview_hint_label.setText("尚未生成模组筛选结果。完成一次处理后，这里会自动显示结果明细。")
             return
 
         csv_name = f"{MOD_REPORT_BASENAME}.csv" if panel_key == "server" else "分类报告.csv"
         csv_path = preview_dir / csv_name
         if not csv_path.exists():
             if section.preview_hint_label is not None:
-                section.preview_hint_label.setText(f"脚本已经执行过，但当前预览目录里没找到 `{csv_name}`，可以先打开结果目录检查导出是否完整。")
+                section.preview_hint_label.setText(f"当前结果目录中未找到 `{csv_name}`，可以先打开结果目录检查文件是否已完整导出。")
             return
 
         try:
@@ -984,12 +984,12 @@ class App(FluentWindow):
                 rows = list(csv.DictReader(fp))
         except Exception as exc:
             if section.preview_hint_label is not None:
-                section.preview_hint_label.setText(f"当前无法读取 `{csv_name}`：{exc}")
+                section.preview_hint_label.setText(f"暂时无法读取 `{csv_name}`：{exc}")
             return
 
         if not rows:
             if section.preview_hint_label is not None:
-                section.preview_hint_label.setText(f"这次导出的 `{csv_name}` 还是空的，暂时没有可以铺开的分类明细。")
+                section.preview_hint_label.setText(f"`{csv_name}` 目前为空，暂时没有可显示的分类明细。")
             return
 
         priority = {"无法分类": 0, "服务端保留": 1, "纯客户端移出": 2}
@@ -1014,7 +1014,7 @@ class App(FluentWindow):
         if section.preview_hint_label is not None:
             unknown_count = sum(1 for row in rows if str(row.get("分类结果", "")) == "无法分类")
             section.preview_hint_label.setText(
-                f"已读取 {len(rows)} 条 CSV 结果，当前预览前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。点击文件名可复制。"
+                f"共读取 {len(rows)} 条结果，当前显示前 {len(preview_rows)} 条，其中待确认 {unknown_count} 条。点击文件名可复制。"
             )
 
     def _find_report_section_key(self, target_section: ReportSectionState) -> Optional[str]:
@@ -1044,7 +1044,7 @@ class App(FluentWindow):
         section.time_label.setText(f"最近时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         section.summary_edit.setPlainText(summary or status)
         if section.log_edit is not None and not section.log_edit.toPlainText().strip():
-            section.log_edit.setPlainText("等待任务开始。")
+            section.log_edit.setPlainText("等待开始处理。")
         section.result_dir = result_dir
         section.extra_dir = extra_dir
         section.result_button.setEnabled(bool(result_dir))
@@ -1081,15 +1081,15 @@ class App(FluentWindow):
         for panel_key, section in self.report_sections.items():
             section.status_dot.set_state("idle")
             if panel_key == "mod":
-                section.status_label.setText("还没有开始模组筛选")
-                section.summary_edit.setPlainText("这里会显示最近一次模组筛选的摘要。")
+                section.status_label.setText("尚未开始模组筛选")
+                section.summary_edit.setPlainText("这里会显示最近一次模组筛选的处理摘要。")
                 section.time_label.setText("最近时间：暂无")
                 section.result_dir = None
                 section.extra_dir = None
                 self._load_report_preview(section)
             elif panel_key == "server":
-                section.status_label.setText("还没有开始一键开服")
-                section.summary_edit.setPlainText("先去“一键开服”页面运行一次脚本。完成后，这里会显示最近一次制作摘要和结果目录入口。")
+                section.status_label.setText("尚未开始一键开服")
+                section.summary_edit.setPlainText("完成一次服务端制作后，这里会显示最近一次处理摘要和输出入口。")
                 section.time_label.setText("最近时间：暂无")
                 section.result_dir = None
                 section.extra_dir = None
@@ -1113,7 +1113,7 @@ class App(FluentWindow):
         for line in reversed(lines):
             if line.startswith(("RuntimeError:", "ValueError:", "FileNotFoundError:", "Exception:")):
                 return line
-        return lines[-1] if lines else "运行失败，详细信息已经写入日志。"
+        return lines[-1] if lines else "处理失败，详细信息已写入记录。"
 
     def show_info(self, message: str) -> None:
         themed_information(self, APP_TITLE, message)
