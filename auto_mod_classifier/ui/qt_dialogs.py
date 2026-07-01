@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFileDialog,
+    QGridLayout,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -81,6 +82,145 @@ def _transient_dialog_stylesheet() -> str:
     """
 
 
+def _message_dialog_icon(kind: str) -> Tuple[str, str]:
+    if kind == "error":
+        return "✕", qt_theme.ERROR_COLOR
+    if kind == "warning":
+        return "!", qt_theme.WARNING_COLOR
+    if kind == "question":
+        return "?", qt_theme.INFO_COLOR
+    return "i", qt_theme.INFO_COLOR
+
+
+class ThemedMessageDialog(QDialog):
+    """项目内统一消息弹窗，避免 QMessageBox 在深色主题下残留系统白底。"""
+
+    def __init__(
+        self,
+        title: str,
+        message: str,
+        *,
+        kind: str = "info",
+        confirm_text: str = "确定",
+        cancel_text: Optional[str] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._accepted = False
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setObjectName("themedMessageDialog")
+        self.resize(560, 220)
+        self.setMinimumWidth(520)
+
+        apply_themed_style(
+            self,
+            lambda: f"""
+            QDialog#themedMessageDialog {{
+                background-color: {qt_theme.BG_CONTENT};
+            }}
+            """,
+        )
+
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(SPACING_LG, SPACING_LG, SPACING_LG, SPACING_LG)
+        root_layout.setSpacing(SPACING_MD)
+
+        content_card = QFrame(self)
+        apply_card_style(content_card, "panel")
+        content_layout = QGridLayout(content_card)
+        content_layout.setContentsMargins(SPACING_LG, SPACING_LG, SPACING_LG, SPACING_LG)
+        content_layout.setHorizontalSpacing(SPACING_MD)
+        content_layout.setVerticalSpacing(SPACING_SM)
+
+        icon_text, icon_color = _message_dialog_icon(kind)
+        icon_badge = QLabel(icon_text, content_card)
+        icon_badge.setAlignment(Qt.AlignCenter)
+        icon_badge.setFixedSize(46, 46)
+        icon_badge.setObjectName("messageIconBadge")
+        apply_themed_style(
+            icon_badge,
+            lambda: f"""
+            QLabel#messageIconBadge {{
+                color: {"#FFFFFF" if qt_theme.current_palette_name() == "light" else qt_theme.TEXT_PRIMARY};
+                background-color: {icon_color};
+                border: 0;
+                border-radius: 23px;
+                font-size: {FONT_SIZE_XL}px;
+                font-weight: 700;
+            }}
+            """,
+        )
+        content_layout.addWidget(icon_badge, 0, 0, 2, 1, Qt.AlignTop)
+
+        title_label = StrongBodyLabel(title, content_card)
+        apply_themed_style(
+            title_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XL}px; font-weight: 700;",
+        )
+        content_layout.addWidget(title_label, 0, 1)
+
+        message_label = BodyLabel(message, content_card)
+        message_label.setWordWrap(True)
+        apply_label_tone(message_label, level=2, size=FONT_SIZE_MD)
+        content_layout.addWidget(message_label, 1, 1)
+
+        root_layout.addWidget(content_card)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(SPACING_SM)
+        button_row.addStretch(1)
+
+        if cancel_text:
+            cancel_button = PushButton(cancel_text, self)
+            cancel_button.setObjectName("accentButton")
+            self._style_secondary_button(cancel_button)
+            cancel_button.clicked.connect(self.reject)
+            button_row.addWidget(cancel_button)
+
+        confirm_button = PrimaryPushButton(confirm_text, self)
+        confirm_button.setMinimumHeight(42)
+        confirm_button.setMinimumWidth(112)
+        confirm_button.clicked.connect(self._confirm)
+        button_row.addWidget(confirm_button)
+
+        root_layout.addLayout(button_row)
+
+    def _style_secondary_button(self, button: PushButton) -> None:
+        button.setMinimumHeight(42)
+        button.setMinimumWidth(112)
+        apply_themed_style(
+            button,
+            lambda: f"""
+            QPushButton#accentButton {{
+                background-color: {qt_theme.ACCENT_BG_SOFT};
+                color: {qt_theme.ACCENT_NORMAL};
+                border: 1px solid {qt_theme.ACCENT_BORDER};
+                border-radius: {RADIUS_MD}px;
+                padding: 0 20px;
+                font-size: {FONT_SIZE_SM}px;
+                font-weight: 600;
+            }}
+            QPushButton#accentButton:hover {{
+                background-color: {qt_theme.ACCENT_BG_MEDIUM};
+                border-color: {qt_theme.ACCENT_BORDER_HOVER};
+            }}
+            QPushButton#accentButton:pressed {{
+                background-color: {qt_theme.ACCENT_BG_MEDIUM};
+                border-color: {qt_theme.ACCENT_BORDER_HOVER};
+            }}
+            """,
+        )
+
+    def _confirm(self) -> None:
+        self._accepted = True
+        self.accept()
+
+    @property
+    def accepted_result(self) -> bool:
+        return self._accepted
+
+
 def themed_get_existing_directory(parent: Optional[QWidget], title: str, directory: str = "") -> str:
     """目录选择保持原生系统样式，不跟随应用主题。"""
     return QFileDialog.getExistingDirectory(parent, title, directory or "")
@@ -98,43 +238,30 @@ def themed_get_open_file_name(
 
 def themed_question(parent: Optional[QWidget], title: str, message: str) -> bool:
     """主题感知的二次确认弹窗。"""
-    dialog = QMessageBox(parent)
-    dialog.setWindowTitle(title)
-    dialog.setText(message)
-    dialog.setIcon(QMessageBox.Question)
-    dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-    dialog.setDefaultButton(QMessageBox.Yes)
-    dialog.setStyleSheet(_transient_dialog_stylesheet())
-    return dialog.exec() == QMessageBox.Yes
+    dialog = ThemedMessageDialog(
+        title,
+        message,
+        kind="question",
+        confirm_text="继续等待",
+        cancel_text="取消",
+        parent=parent,
+    )
+    dialog.exec()
+    return dialog.accepted_result
 
 
 def themed_information(parent: Optional[QWidget], title: str, message: str) -> None:
-    dialog = QMessageBox(parent)
-    dialog.setWindowTitle(title)
-    dialog.setText(message)
-    dialog.setIcon(QMessageBox.Information)
-    dialog.setStandardButtons(QMessageBox.Ok)
-    dialog.setStyleSheet(_transient_dialog_stylesheet())
+    dialog = ThemedMessageDialog(title, message, kind="info", parent=parent)
     dialog.exec()
 
 
 def themed_warning(parent: Optional[QWidget], title: str, message: str) -> None:
-    dialog = QMessageBox(parent)
-    dialog.setWindowTitle(title)
-    dialog.setText(message)
-    dialog.setIcon(QMessageBox.Warning)
-    dialog.setStandardButtons(QMessageBox.Ok)
-    dialog.setStyleSheet(_transient_dialog_stylesheet())
+    dialog = ThemedMessageDialog(title, message, kind="warning", parent=parent)
     dialog.exec()
 
 
 def themed_critical(parent: Optional[QWidget], title: str, message: str) -> None:
-    dialog = QMessageBox(parent)
-    dialog.setWindowTitle(title)
-    dialog.setText(message)
-    dialog.setIcon(QMessageBox.Critical)
-    dialog.setStandardButtons(QMessageBox.Ok)
-    dialog.setStyleSheet(_transient_dialog_stylesheet())
+    dialog = ThemedMessageDialog(title, message, kind="error", parent=parent)
     dialog.exec()
 
 
@@ -148,22 +275,49 @@ class VersionSelectionDialog(QDialog):
 
         self.setWindowTitle("选择目标版本")
         self.resize(880, 420)
+        self.setObjectName("versionSelectionDialog")
+
+        apply_themed_style(
+            self,
+            lambda: f"""
+            QDialog#versionSelectionDialog {{
+                background-color: {qt_theme.BG_CONTENT};
+            }}
+            """,
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
 
+        header_card = QFrame(self)
+        apply_card_style(header_card, "soft")
+        header_layout = QVBoxLayout(header_card)
+        header_layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_MD)
+        header_layout.setSpacing(6)
+
+        title_label = StrongBodyLabel("选择目标版本", header_card)
+        apply_themed_style(
+            title_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XL}px; font-weight: 700;",
+        )
+        header_layout.addWidget(title_label)
+
         hint = BodyLabel("检测到多个可用版本，请选择要制作服务端的客户端版本。")
         hint.setWordWrap(True)
-        layout.addWidget(hint)
+        apply_label_tone(hint, level=2, size=FONT_SIZE_MD)
+        header_layout.addWidget(hint)
+        layout.addWidget(header_card)
 
         table = QTableWidget(len(candidates), 6, self)
+        table.setObjectName("versionSelectionTable")
         table.setHorizontalHeaderLabels(["版本ID", "Minecraft", "加载器", "加载器版本", "Java", "版本文件"])
         table.verticalHeader().setVisible(False)
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.setSelectionMode(QTableWidget.SingleSelection)
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.setAlternatingRowColors(True)
+        table.setShowGrid(True)
         table.horizontalHeader().setStretchLastSection(True)
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -172,6 +326,44 @@ class VersionSelectionDialog(QDialog):
         table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
         table.itemDoubleClicked.connect(lambda _item: self.confirm())
+        apply_themed_style(
+            table,
+            lambda: f"""
+            QTableWidget#versionSelectionTable {{
+                background-color: {qt_theme.EDITOR_BG};
+                alternate-background-color: {qt_theme.TABLE_ROW_BG};
+                color: {qt_theme.TEXT_PRIMARY};
+                border: 1px solid {qt_theme.BORDER_STRONG};
+                border-radius: {RADIUS_MD}px;
+                outline: 0;
+                gridline-color: {qt_theme.SCROLL_HANDLE_BG};
+                selection-background-color: {qt_theme.ACCENT_BG_MEDIUM};
+                selection-color: {qt_theme.TEXT_PRIMARY};
+                font-size: {FONT_SIZE_XS}px;
+            }}
+            QTableWidget#versionSelectionTable::item {{
+                padding: 6px 8px;
+            }}
+            """,
+        )
+        apply_themed_style(
+            table.horizontalHeader(),
+            lambda: f"""
+            QHeaderView {{
+                background-color: {qt_theme.TABLE_HEADER_BG};
+                border: 0;
+            }}
+            QHeaderView::section {{
+                background-color: {qt_theme.TABLE_HEADER_BG};
+                color: {qt_theme.TEXT_PRIMARY};
+                border: 0;
+                border-bottom: 1px solid {qt_theme.BORDER_STRONG};
+                padding: 8px 10px;
+                font-size: {FONT_SIZE_XS}px;
+                font-weight: 600;
+            }}
+            """,
+        )
         self.table = table
 
         for row_index, candidate in enumerate(candidates):
@@ -197,10 +389,14 @@ class VersionSelectionDialog(QDialog):
         button_row.addStretch(1)
 
         cancel_button = PushButton("取消", self)
+        cancel_button.setObjectName("accentButton")
+        self._style_secondary_button(cancel_button)
         cancel_button.clicked.connect(self.reject)
         button_row.addWidget(cancel_button)
 
-        confirm_button = PushButton("确定", self)
+        confirm_button = PrimaryPushButton("确定", self)
+        confirm_button.setMinimumHeight(42)
+        confirm_button.setMinimumWidth(112)
         confirm_button.clicked.connect(self.confirm)
         button_row.addWidget(confirm_button)
 
@@ -212,6 +408,32 @@ class VersionSelectionDialog(QDialog):
             return
         self.selected_candidate = self.candidates[row]
         self.accept()
+
+    def _style_secondary_button(self, button: PushButton) -> None:
+        button.setMinimumHeight(42)
+        button.setMinimumWidth(112)
+        apply_themed_style(
+            button,
+            lambda: f"""
+            QPushButton#accentButton {{
+                background-color: {qt_theme.ACCENT_BG_SOFT};
+                color: {qt_theme.ACCENT_NORMAL};
+                border: 1px solid {qt_theme.ACCENT_BORDER};
+                border-radius: {RADIUS_MD}px;
+                padding: 0 20px;
+                font-size: {FONT_SIZE_SM}px;
+                font-weight: 600;
+            }}
+            QPushButton#accentButton:hover {{
+                background-color: {qt_theme.ACCENT_BG_MEDIUM};
+                border-color: {qt_theme.ACCENT_BORDER_HOVER};
+            }}
+            QPushButton#accentButton:pressed {{
+                background-color: {qt_theme.ACCENT_BG_MEDIUM};
+                border-color: {qt_theme.ACCENT_BORDER_HOVER};
+            }}
+            """,
+        )
 
 
 class ChecklistDialog(QDialog):
