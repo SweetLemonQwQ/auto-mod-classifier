@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QMessageBox,
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
@@ -41,7 +40,6 @@ from .qt_theme import (
     apply_card_style,
     apply_themed_style,
     apply_label_tone,
-    build_window_stylesheet,
 )
 
 
@@ -58,28 +56,8 @@ def _rgba(color: str, alpha: float) -> str:
     return f"rgba({red}, {green}, {blue}, {alpha:.2f})"
 
 
-def _transient_dialog_stylesheet() -> str:
-    """给系统文件选择框/消息框使用的临时主题样式。"""
-    return build_window_stylesheet() + f"""
-    QFileDialog, QMessageBox {{
-        background-color: {qt_theme.BG_CONTENT};
-        color: {qt_theme.TEXT_PRIMARY};
-    }}
-    QFileDialog QLabel,
-    QMessageBox QLabel {{
-        color: {qt_theme.TEXT_PRIMARY};
-        background: transparent;
-    }}
-    QFileDialog QListView,
-    QFileDialog QTreeView,
-    QMessageBox QTextEdit,
-    QMessageBox QPlainTextEdit {{
-        background-color: {qt_theme.EDITOR_BG};
-        color: {qt_theme.TEXT_PRIMARY};
-        border: 1px solid {qt_theme.BORDER_DEFAULT};
-        border-radius: {RADIUS_MD}px;
-    }}
-    """
+DIALOG_BUTTON_HEIGHT = 42
+DIALOG_BUTTON_MIN_WIDTH = 116
 
 
 def _message_dialog_icon(kind: str) -> Tuple[str, str]:
@@ -90,6 +68,12 @@ def _message_dialog_icon(kind: str) -> Tuple[str, str]:
     if kind == "question":
         return "?", qt_theme.INFO_COLOR
     return "i", qt_theme.INFO_COLOR
+
+
+def _apply_dialog_button_size(button: PushButton | PrimaryPushButton) -> None:
+    """统一弹窗按钮尺寸，避免不同弹窗各自漂移。"""
+    button.setFixedHeight(DIALOG_BUTTON_HEIGHT)
+    button.setMinimumWidth(DIALOG_BUTTON_MIN_WIDTH)
 
 
 class ThemedMessageDialog(QDialog):
@@ -173,44 +157,16 @@ class ThemedMessageDialog(QDialog):
 
         if cancel_text:
             cancel_button = PushButton(cancel_text, self)
-            cancel_button.setObjectName("accentButton")
-            self._style_secondary_button(cancel_button)
+            _apply_dialog_button_size(cancel_button)
             cancel_button.clicked.connect(self.reject)
             button_row.addWidget(cancel_button)
 
         confirm_button = PrimaryPushButton(confirm_text, self)
-        confirm_button.setMinimumHeight(42)
-        confirm_button.setMinimumWidth(112)
+        _apply_dialog_button_size(confirm_button)
         confirm_button.clicked.connect(self._confirm)
         button_row.addWidget(confirm_button)
 
         root_layout.addLayout(button_row)
-
-    def _style_secondary_button(self, button: PushButton) -> None:
-        button.setMinimumHeight(42)
-        button.setMinimumWidth(112)
-        apply_themed_style(
-            button,
-            lambda: f"""
-            QPushButton#accentButton {{
-                background-color: {qt_theme.ACCENT_BG_SOFT};
-                color: {qt_theme.ACCENT_NORMAL};
-                border: 1px solid {qt_theme.ACCENT_BORDER};
-                border-radius: {RADIUS_MD}px;
-                padding: 0 20px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: 600;
-            }}
-            QPushButton#accentButton:hover {{
-                background-color: {qt_theme.ACCENT_BG_MEDIUM};
-                border-color: {qt_theme.ACCENT_BORDER_HOVER};
-            }}
-            QPushButton#accentButton:pressed {{
-                background-color: {qt_theme.ACCENT_BG_MEDIUM};
-                border-color: {qt_theme.ACCENT_BORDER_HOVER};
-            }}
-            """,
-        )
 
     def _confirm(self) -> None:
         self._accepted = True
@@ -389,14 +345,12 @@ class VersionSelectionDialog(QDialog):
         button_row.addStretch(1)
 
         cancel_button = PushButton("取消", self)
-        cancel_button.setObjectName("accentButton")
-        self._style_secondary_button(cancel_button)
+        _apply_dialog_button_size(cancel_button)
         cancel_button.clicked.connect(self.reject)
         button_row.addWidget(cancel_button)
 
         confirm_button = PrimaryPushButton("确定", self)
-        confirm_button.setMinimumHeight(42)
-        confirm_button.setMinimumWidth(112)
+        _apply_dialog_button_size(confirm_button)
         confirm_button.clicked.connect(self.confirm)
         button_row.addWidget(confirm_button)
 
@@ -408,32 +362,6 @@ class VersionSelectionDialog(QDialog):
             return
         self.selected_candidate = self.candidates[row]
         self.accept()
-
-    def _style_secondary_button(self, button: PushButton) -> None:
-        button.setMinimumHeight(42)
-        button.setMinimumWidth(112)
-        apply_themed_style(
-            button,
-            lambda: f"""
-            QPushButton#accentButton {{
-                background-color: {qt_theme.ACCENT_BG_SOFT};
-                color: {qt_theme.ACCENT_NORMAL};
-                border: 1px solid {qt_theme.ACCENT_BORDER};
-                border-radius: {RADIUS_MD}px;
-                padding: 0 20px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: 600;
-            }}
-            QPushButton#accentButton:hover {{
-                background-color: {qt_theme.ACCENT_BG_MEDIUM};
-                border-color: {qt_theme.ACCENT_BORDER_HOVER};
-            }}
-            QPushButton#accentButton:pressed {{
-                background-color: {qt_theme.ACCENT_BG_MEDIUM};
-                border-color: {qt_theme.ACCENT_BORDER_HOVER};
-            }}
-            """,
-        )
 
 
 class ChecklistDialog(QDialog):
@@ -485,7 +413,6 @@ class ChecklistDialog(QDialog):
         actions_layout.addWidget(select_all_button)
 
         select_none_button = PushButton("全不选", self)
-        select_none_button.setObjectName("accentButton")
         self._style_action_button(select_none_button, primary=False)
         select_none_button.clicked.connect(self.select_none)
         actions_layout.addWidget(select_none_button)
@@ -576,7 +503,6 @@ class ChecklistDialog(QDialog):
         button_row.addStretch(1)
 
         cancel_button = PushButton("取消", self)
-        cancel_button.setObjectName("accentButton")
         self._style_action_button(cancel_button, primary=False)
         cancel_button.clicked.connect(self.reject)
         button_row.addWidget(cancel_button)
@@ -730,32 +656,9 @@ class ChecklistDialog(QDialog):
         return "分类结果"
 
     def _style_action_button(self, button: PushButton, *, primary: bool) -> None:
-        button.setMinimumHeight(42)
-        button.setMinimumWidth(116)
+        _apply_dialog_button_size(button)
         if primary:
             return
-        apply_themed_style(
-            button,
-            lambda: f"""
-            QPushButton#accentButton {{
-                background-color: {qt_theme.ACCENT_BG_SOFT};
-                color: {qt_theme.ACCENT_NORMAL};
-                border: 1px solid {qt_theme.ACCENT_BORDER};
-                border-radius: {RADIUS_MD}px;
-                padding: 0 20px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: 600;
-            }}
-            QPushButton#accentButton:hover {{
-                background-color: {qt_theme.ACCENT_BG_MEDIUM};
-                border-color: {qt_theme.ACCENT_BORDER_HOVER};
-            }}
-            QPushButton#accentButton:pressed {{
-                background-color: {qt_theme.ACCENT_BG_MEDIUM};
-                border-color: {qt_theme.ACCENT_BORDER_HOVER};
-            }}
-            """,
-        )
 
     def select_all(self) -> None:
         for checkbox in self.checkboxes.values():
