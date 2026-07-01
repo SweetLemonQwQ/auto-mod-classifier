@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import html
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -262,16 +263,15 @@ class ServerFailureDiagnosticDialog(QDialog):
         self,
         *,
         summary: str,
-        suspicions: List[str],
-        suspect_mods: List[str],
+        findings: List[Dict[str, Any]],
         snippet: str,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self._snippet = snippet or ""
         self.setWindowTitle("服务端启动失败")
-        self.resize(760, 560)
-        self.setMinimumSize(700, 500)
+        self.resize(760, 540)
+        self.setMinimumSize(700, 480)
         self.setObjectName("serverFailureDiagnosticDialog")
 
         apply_themed_style(
@@ -306,35 +306,36 @@ class ServerFailureDiagnosticDialog(QDialog):
         header_layout.addWidget(summary_label)
         layout.addWidget(header_card)
 
-        if suspect_mods:
-            mods_label = BodyLabel(f"可疑模组：{', '.join(suspect_mods)}", self)
-            mods_label.setWordWrap(True)
-            apply_label_tone(mods_label, muted=False, size=FONT_SIZE_SM)
-            layout.addWidget(mods_label)
-
-        hints_card = QFrame(self)
-        apply_card_style(hints_card, "panel")
-        hints_layout = QVBoxLayout(hints_card)
-        hints_layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_MD)
-        hints_layout.setSpacing(SPACING_SM)
-
-        hints_title = StrongBodyLabel("可能原因", hints_card)
+        findings_title = StrongBodyLabel("已识别到的问题", self)
         apply_themed_style(
-            hints_title,
+            findings_title,
             lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 700;",
         )
-        hints_layout.addWidget(hints_title)
-        for item in suspicions:
-            hint_label = BodyLabel(f"- {item}", hints_card)
-            hint_label.setWordWrap(True)
-            apply_label_tone(hint_label, level=2, size=FONT_SIZE_SM)
-            hints_layout.addWidget(hint_label)
+        layout.addWidget(findings_title)
 
-        ai_hint = BodyLabel("建议点击“复制关键报错”，再把内容发给 DeepSeek、豆包等 AI 继续排查。", hints_card)
-        ai_hint.setWordWrap(True)
-        apply_label_tone(ai_hint, muted=True, size=FONT_SIZE_SM)
-        hints_layout.addWidget(ai_hint)
-        layout.addWidget(hints_card)
+        findings_area = QScrollArea(self)
+        findings_area.setWidgetResizable(True)
+        findings_area.setFrameShape(QFrame.NoFrame)
+        findings_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        findings_area.setMinimumHeight(210)
+        apply_themed_style(
+            findings_area,
+            lambda: f"background: transparent; border: none;",
+        )
+
+        findings_container = QWidget(findings_area)
+        findings_layout = QVBoxLayout(findings_container)
+        findings_layout.setContentsMargins(0, 0, 0, 0)
+        findings_layout.setSpacing(SPACING_SM)
+
+        if findings:
+            for item in findings:
+                findings_layout.addWidget(self._build_failure_finding_card(item))
+        else:
+            findings_layout.addWidget(self._build_failure_empty_card())
+        findings_layout.addStretch(1)
+        findings_area.setWidget(findings_container)
+        layout.addWidget(findings_area)
 
         snippet_title = StrongBodyLabel("关键报错片段", self)
         apply_themed_style(
@@ -346,7 +347,7 @@ class ServerFailureDiagnosticDialog(QDialog):
         snippet_edit = PlainTextEdit(self)
         snippet_edit.setReadOnly(True)
         snippet_edit.setPlainText(self._snippet or "未提取到关键报错片段。")
-        snippet_edit.setMinimumHeight(220)
+        snippet_edit.setMinimumHeight(180)
         apply_themed_style(
             snippet_edit,
             lambda: f"""
@@ -358,6 +359,11 @@ class ServerFailureDiagnosticDialog(QDialog):
             """,
         )
         layout.addWidget(snippet_edit, 1)
+
+        ai_hint = BodyLabel("可以先点“复制关键报错”，再把内容发给 DeepSeek、豆包等 AI 继续排查。", self)
+        ai_hint.setWordWrap(True)
+        apply_label_tone(ai_hint, muted=True, size=FONT_SIZE_SM)
+        layout.addWidget(ai_hint)
 
         button_row = QHBoxLayout()
         button_row.addStretch(1)
@@ -376,6 +382,59 @@ class ServerFailureDiagnosticDialog(QDialog):
 
     def copy_snippet(self) -> None:
         QApplication.clipboard().setText(self._snippet)
+
+    def _build_failure_finding_card(self, item: Dict[str, Any]) -> QFrame:
+        card = QFrame(self)
+        apply_card_style(card, "panel")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_MD)
+        card_layout.setSpacing(6)
+
+        title_label = StrongBodyLabel(str(item.get("title") or "已识别到异常"), card)
+        apply_themed_style(
+            title_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 700;",
+        )
+        card_layout.addWidget(title_label)
+
+        details = [str(detail) for detail in item.get("details") or [] if str(detail).strip()]
+        details_html = "".join(f"<div>{self._format_finding_detail(detail)}</div>" for detail in details)
+
+        details_label = QLabel(card)
+        details_label.setWordWrap(True)
+        details_label.setTextFormat(Qt.RichText)
+        details_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_label.setText(details_html or "<div>日志里提到了这个问题，但还没抽出更具体的对象。</div>")
+        apply_themed_style(
+            details_label,
+            lambda: f"color: {qt_theme.TEXT_SECONDARY}; background: transparent; font-size: {FONT_SIZE_SM}px; line-height: 1.5;",
+        )
+        card_layout.addWidget(details_label)
+        return card
+
+    def _build_failure_empty_card(self) -> QFrame:
+        card = QFrame(self)
+        apply_card_style(card, "panel")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_MD)
+        card_layout.setSpacing(6)
+
+        title_label = StrongBodyLabel("暂未识别到明确冲突对象", card)
+        apply_themed_style(
+            title_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 700;",
+        )
+        card_layout.addWidget(title_label)
+
+        detail_label = BodyLabel("这次没有从日志里抽出确定的模组、版本或依赖关系，建议直接复制下面的关键报错片段继续排查。", card)
+        detail_label.setWordWrap(True)
+        apply_label_tone(detail_label, level=2, size=FONT_SIZE_SM)
+        card_layout.addWidget(detail_label)
+        return card
+
+    def _format_finding_detail(self, detail: str) -> str:
+        escaped = html.escape(str(detail))
+        return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
 
 
 class VersionSelectionDialog(QDialog):

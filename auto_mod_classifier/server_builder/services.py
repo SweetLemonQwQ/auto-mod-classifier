@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -8,14 +9,99 @@ from .common import ServerBuilderCommonService
 from .context import ServerBuilderRuntime
 
 
+_FAILURE_FINDING_TITLES = {
+    "dependency": "缺少前置依赖",
+    "conflict": "模组冲突或重复安装",
+    "platform-version": "Minecraft / Forge / Fabric 版本不匹配",
+    "client-only": "纯客户端模组混入服务端",
+    "java": "Java 版本不对",
+}
+
+_FAILURE_FINDING_ORDER = [
+    "dependency",
+    "conflict",
+    "platform-version",
+    "client-only",
+    "java",
+]
+
+_PLATFORM_NAMES = {
+    "minecraft": "Minecraft",
+    "forge": "Forge",
+    "neoforge": "NeoForge",
+    "fabric": "Fabric",
+    "fabricloader": "Fabric Loader",
+    "fabric-loader": "Fabric Loader",
+}
+
+
+def _normalize_failure_text(text: str) -> str:
+    return str(text or "").strip()
+
+
+def _normalize_failure_mod_name(name: str) -> str:
+    cleaned = _normalize_failure_text(name)
+    return cleaned.strip("'\"")
+
+
+def _humanize_expected_range(range_text: str) -> str:
+    cleaned = _normalize_failure_text(range_text)
+    if not cleaned:
+        return ""
+    match = re.fullmatch(r"\[([^,\]]+),\)", cleaned)
+    if match:
+        return f">= {match.group(1).strip()}"
+    match = re.fullmatch(r"\(([^,\]]+),\)", cleaned)
+    if match:
+        return f"> {match.group(1).strip()}"
+    match = re.fullmatch(r"\[([^,\]]+),([^\]]+)\]", cleaned)
+    if match:
+        return f"{match.group(1).strip()} 到 {match.group(2).strip()}"
+    match = re.fullmatch(r"\[([^,\]]+),([^\]]+)\)", cleaned)
+    if match:
+        return f">= {match.group(1).strip()} 且 < {match.group(2).strip()}"
+    match = re.fullmatch(r"\(([^,\]]+),([^\]]+)\]", cleaned)
+    if match:
+        return f"> {match.group(1).strip()} 且 <= {match.group(2).strip()}"
+    if cleaned.startswith("[") and cleaned.endswith("]") and "," not in cleaned:
+        return cleaned[1:-1].strip()
+    return cleaned
+
+
+def _class_file_major_to_java(major_text: str) -> Optional[int]:
+    match = re.search(r"\d+", str(major_text))
+    if not match:
+        return None
+    major = int(match.group(0))
+    java_version = major - 44
+    if 1 <= java_version <= 99:
+        return java_version
+    return None
+
+
+def _add_failure_finding(groups: Dict[str, Dict[str, Any]], kind: str, detail: str) -> None:
+    cleaned = _normalize_failure_text(detail)
+    if not cleaned:
+        return
+    group = groups.setdefault(
+        kind,
+        {
+            "kind": kind,
+            "title": _FAILURE_FINDING_TITLES[kind],
+            "details": [],
+        },
+    )
+    if cleaned not in group["details"]:
+        group["details"].append(cleaned)
+
+
 def collect_server_failure_context(install_log_lines: Sequence[str]) -> Dict[str, Any]:
     """从启动/安装日志里提取更适合给用户看的失败摘要。"""
     lines = [str(line).rstrip() for line in install_log_lines if str(line).strip()]
     if not lines:
         return {
             "summary": "服务端制作大部分已完成，但没有读取到足够的启动报错信息。",
-            "suspicions": ["建议先打开安装阶段日志，确认服务端最后停在什么位置。"],
-            "suspect_mods": [],
+            "findings": [],
             "snippet": "",
         }
 
@@ -27,10 +113,12 @@ def collect_server_failure_context(install_log_lines: Sequence[str]) -> Dict[str
         "mixin",
         "modresolutionexception",
         "missing dependency",
+        "missing or unsupported mandatory dependencies",
         "requires",
         "conflict",
         "duplicate",
         "unsupported class file major version",
+        "unsupportedclassversionerror",
         "noclassdeffounderror",
         "classnotfoundexception",
     )
@@ -45,48 +133,117 @@ def collect_server_failure_context(install_log_lines: Sequence[str]) -> Dict[str
     end = min(len(lines), anchor + 25)
     snippet_lines = lines[start:end]
     snippet = "\n".join(snippet_lines)
+    snippet_text = "\n".join(snippet_lines)
 
-    suspect_mods: List[str] = []
-    suspicions: List[str] = []
-    patterns = (
-        r"mod\s+'([^']+)'",
-        r"mod\s+([A-Za-z0-9_.\-]+)",
-        r"([A-Za-z0-9_.\-]+)\s+requires",
-        r"([A-Za-z0-9_.\-]+)\s+conflicts?\s+with",
-        r"duplicate mod\s+([A-Za-z0-9_.\-]+)",
+    findings_map: Dict[str, Dict[str, Any]] = {}
+
+    dependency_pattern = re.compile(
+        r"Mod ID:\s*'(?P<mod>[^']+)'\s*,\s*Requested by:\s*'(?P<requester>[^']+)'\s*,\s*Expected range:\s*'(?P<expected>[^']*)'"
+        r"(?:\s*,\s*Actual version:\s*'(?P<actual>[^']*)')?",
+        re.IGNORECASE,
     )
+    for match in dependency_pattern.finditer(snippet_text):
+        mod_name = _normalize_failure_mod_name(match.group("mod"))
+        requester = _normalize_failure_mod_name(match.group("requester"))
+        expected = _humanize_expected_range(match.group("expected"))
+        actual = _normalize_failure_mod_name(match.group("actual"))
+        actual_missing = actual.lower() in {"", "none", "null", "missing", "not found"}
+        platform_name = _PLATFORM_NAMES.get(mod_name.lower())
+        if platform_name:
+            requester_prefix = f"**{requester}** 需要 " if requester and requester.lower() != "the game" else ""
+            detail = f"{requester_prefix}**{platform_name} {expected or match.group('expected')}**。"
+            _add_failure_finding(findings_map, "platform-version", detail)
+            if actual_missing:
+                _add_failure_finding(findings_map, "platform-version", f"当前没有检测到可用的 **{platform_name}** 版本信息。")
+            elif actual:
+                _add_failure_finding(findings_map, "platform-version", f"当前环境实际是 **{actual}**。")
+            continue
 
-    for line in snippet_lines:
-        lowered = line.lower()
-        if "unsupported class file major version" in lowered or "java.lang.unsupportedclassversionerror" in lowered:
-            suspicions.append("Java 版本和当前服务端或模组要求不匹配。")
-        if "missing dependency" in lowered or "could not find required mod" in lowered:
-            suspicions.append("有模组缺少前置依赖。")
-        if "conflict" in lowered or "duplicate" in lowered:
-            suspicions.append("存在模组冲突或重复安装。")
-        if "mixin apply failed" in lowered or "mixintransformererror" in lowered:
-            suspicions.append("Mixin 注入失败，通常是模组版本不兼容或彼此冲突。")
-        if "requires minecraft" in lowered or "requires forge" in lowered or "requires fabric" in lowered:
-            suspicions.append("某些模组要求的 Minecraft / Forge / Fabric 版本和当前服务端不一致。")
-        if "noclassdeffounderror" in lowered or "classnotfoundexception" in lowered:
-            suspicions.append("可能混入了纯客户端模组，或某个关键前置没有装上。")
+        requirement = expected or _normalize_failure_text(match.group("expected"))
+        requester_name = requester or "某个模组"
+        _add_failure_finding(findings_map, "dependency", f"**{requester_name}** 需要 **{mod_name} {requirement}**。")
+        if actual_missing:
+            _add_failure_finding(findings_map, "dependency", f"当前没有检测到 **{mod_name}**，这个前置还没装上。")
+        elif actual:
+            _add_failure_finding(findings_map, "dependency", f"当前检测到的版本是 **{actual}**，前置版本不够。")
 
-        for pattern in patterns:
-            for match in re.findall(pattern, line, flags=re.IGNORECASE):
-                mod_name = str(match).strip()
-                if len(mod_name) >= 3 and mod_name.lower() not in {"java", "minecraft", "forge", "fabric"}:
-                    if mod_name not in suspect_mods:
-                        suspect_mods.append(mod_name)
+    generic_dependency_patterns = (
+        re.compile(r"could not find required mod:?\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?", re.IGNORECASE),
+        re.compile(r"missing dependency:?\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?", re.IGNORECASE),
+    )
+    for pattern in generic_dependency_patterns:
+        for match in pattern.finditer(snippet_text):
+            mod_name = _normalize_failure_mod_name(match.group("mod"))
+            if mod_name:
+                _add_failure_finding(findings_map, "dependency", f"服务端里没有找到 **{mod_name}**。")
 
-    if suspect_mods:
-        suspicions.insert(0, f"日志里提到了这些可疑模组：{', '.join(suspect_mods[:4])}")
-    if not suspicions:
-        suspicions.append("更像是模组冲突、前置缺失或版本不兼容导致的启动失败。")
+    conflict_patterns = (
+        re.compile(r"duplicate mod(?:s)?\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?", re.IGNORECASE),
+        re.compile(r"found a duplicate mod\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?", re.IGNORECASE),
+        re.compile(r"mod\s+'(?P<left>[^']+)'\s+conflicts?\s+with\s+mod\s+'(?P<right>[^']+)'", re.IGNORECASE),
+    )
+    for pattern in conflict_patterns:
+        for match in pattern.finditer(snippet_text):
+            groups = match.groupdict()
+            if groups.get("mod"):
+                mod_name = _normalize_failure_mod_name(groups["mod"])
+                _add_failure_finding(findings_map, "conflict", f"服务端里重复出现了 **{mod_name}**，同一个模组可能放了两个版本。")
+            else:
+                left = _normalize_failure_mod_name(groups.get("left", ""))
+                right = _normalize_failure_mod_name(groups.get("right", ""))
+                if left and right:
+                    _add_failure_finding(findings_map, "conflict", f"**{left}** 和 **{right}** 不能同时加载。")
+    if "conflict" in snippet_text.lower() and "conflict" not in findings_map:
+        _add_failure_finding(findings_map, "conflict", "日志里明确提到了 **conflict**，通常是两个模组互斥，或者同一个模组重复放入。")
 
+    platform_requirement_pattern = re.compile(
+        r"(?P<requester>[A-Za-z0-9_.\-]+)\s+requires\s+(?P<platform>minecraft|forge|neoforge|fabric(?:\s+loader)?)\s+(?P<expected>[^\s,;]+)"
+        r"(?:.*?(?:current|actual|found|but\s+is)\s+(?P<actual>[^\s,;]+))?",
+        re.IGNORECASE,
+    )
+    for match in platform_requirement_pattern.finditer(snippet_text):
+        requester = _normalize_failure_mod_name(match.group("requester"))
+        platform_key = match.group("platform").replace(" ", "").lower()
+        platform_name = _PLATFORM_NAMES.get(platform_key, match.group("platform"))
+        expected = _normalize_failure_text(match.group("expected"))
+        actual = _normalize_failure_text(match.group("actual"))
+        _add_failure_finding(findings_map, "platform-version", f"**{requester}** 需要 **{platform_name} {expected}**。")
+        if actual:
+            _add_failure_finding(findings_map, "platform-version", f"当前环境实际是 **{actual}**。")
+
+    client_only_pattern = re.compile(
+        r"(NoClassDefFoundError|ClassNotFoundException|Attempted to load class).*?(net[/\.]minecraft[/\.]client)",
+        re.IGNORECASE,
+    )
+    if client_only_pattern.search(snippet_text):
+        _add_failure_finding(findings_map, "client-only", "日志里出现了 **net/minecraft/client/** 相关类，这通常是把只适合客户端的模组放进了服务端。")
+
+    java_runtime_pattern = re.compile(
+        r"class file version\s+(?P<required>\d+(?:\.\d+)?)\s*,\s*this version of the Java Runtime only recognizes class file versions up to\s+(?P<actual>\d+(?:\.\d+)?)",
+        re.IGNORECASE,
+    )
+    java_match = java_runtime_pattern.search(snippet_text)
+    if java_match:
+        required_java = _class_file_major_to_java(java_match.group("required"))
+        actual_java = _class_file_major_to_java(java_match.group("actual"))
+        if required_java and actual_java:
+            _add_failure_finding(findings_map, "java", f"当前 Java 最多只支持 **Java {actual_java}**，但报错文件需要 **Java {required_java}**。")
+
+    unsupported_major_pattern = re.compile(r"unsupported class file major version\s+(?P<major>\d+)", re.IGNORECASE)
+    major_match = unsupported_major_pattern.search(snippet_text)
+    if major_match:
+        required_java = _class_file_major_to_java(major_match.group("major"))
+        if required_java:
+            _add_failure_finding(findings_map, "java", f"日志提到了 **class file major version {major_match.group('major')}**，通常至少需要 **Java {required_java}**。")
+        else:
+            _add_failure_finding(findings_map, "java", f"日志提到了 **class file major version {major_match.group('major')}**，当前 Java 版本大概率不对。")
+    elif "unsupportedclassversionerror" in snippet_text.lower():
+        _add_failure_finding(findings_map, "java", "日志明确报了 **UnsupportedClassVersionError**，当前 Java 版本和服务端要求对不上。")
+
+    findings = [findings_map[kind] for kind in _FAILURE_FINDING_ORDER if kind in findings_map]
     return {
         "summary": "服务端制作大部分已完成，当前主要卡在最终启动验证。",
-        "suspicions": suspicions[:4],
-        "suspect_mods": suspect_mods[:6],
+        "findings": findings,
         "snippet": snippet,
     }
 

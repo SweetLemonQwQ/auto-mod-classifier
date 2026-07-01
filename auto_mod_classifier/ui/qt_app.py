@@ -756,8 +756,7 @@ class App(FluentWindow):
                         diagnostic = diagnostic_payload.get("diagnostic") or {}
                         dialog = ServerFailureDiagnosticDialog(
                             summary=str(diagnostic.get("summary") or "服务端启动失败。"),
-                            suspicions=list(diagnostic.get("suspicions") or []),
-                            suspect_mods=list(diagnostic.get("suspect_mods") or []),
+                            findings=list(diagnostic.get("findings") or []),
                             snippet=str(diagnostic.get("snippet") or ""),
                             parent=self,
                         )
