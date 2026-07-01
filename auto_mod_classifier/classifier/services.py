@@ -487,13 +487,16 @@ class CurseforgeRemoteSource:
         # CurseForge 目前是兜底来源，所以放在策略链后面。
         for query in self.classifier.collect_unique_queries(self.classifier.build_mcmod_query_tokens(meta)):
             search_key = f"cf-search::{query}"
-            url = f"https://www.curseforge.com/minecraft/search?search={urllib.parse.quote(query)}"
+            url = (
+                "https://www.curseforge.com/minecraft/search?"
+                f"class=mc-mods&search={urllib.parse.quote(query)}"
+            )
             html = self.classifier.mcmod_text_request(search_key, url)
             if not html:
                 continue
 
             seen = set()
-            links: list[tuple[str, str]] = []
+            links: list[tuple[int, str, str]] = []
             for pattern in [
                 r'<a[^>]+href="(/minecraft/mc-mods/[^"?]+)"[^>]*>(.*?)</a>',
                 r'href="(/minecraft/mc-mods/[^"?]+)"[^>]*>([^<]+)<',
@@ -505,15 +508,26 @@ class CurseforgeRemoteSource:
                     title = re.sub(r"\s+", " ", title)
                     if href not in seen and title and title != "Download" and title != "Relations" and title != "Comments":
                         seen.add(href)
-                        links.append((title, "https://www.curseforge.com" + href))
+                        score = self.classifier.score_mcmod_page(meta, title)
+                        if score <= 0:
+                            continue
+                        links.append((score, title, "https://www.curseforge.com" + href))
 
-            for title, link in links[:3]:
+            if not links:
+                continue
+            links.sort(key=lambda item: item[0], reverse=True)
+
+            for search_score, title, link in links[:5]:
                 page_key = f"cf-page::{link}"
                 page_html = self.classifier.mcmod_text_request(page_key, link, max_attempts=3)
                 if not page_html:
                     continue
-                score = self.classifier.score_mcmod_page(meta, title)
-                if score < 80:
+                score = max(
+                    search_score,
+                    self.classifier.score_mcmod_page(meta, title),
+                    self.classifier.score_mcmod_page(meta, self.classifier.extract_page_title(page_html) or title),
+                )
+                if score < 100 or not self.classifier.is_confident_mcmod_candidate(meta, title):
                     continue
 
                 matched = re.search(r'Environment\s*:\s*(Client(?:&amp;)?\s*(?:&amp;)?\s*Server|Client)\b', page_html, re.I)

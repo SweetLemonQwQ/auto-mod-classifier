@@ -39,4 +39,4 @@ class ClassifierCore(
         self.use_offline_database: bool = False
         self.offline_database = OfflineModDatabase()
         # 由界面层注入提示回调，核心层不直接依赖 Tk 弹窗
-        self.browser_warning_callback: Optional[Callable[[str], None]] = None
+        self.browser_warning_callback: Optional[Callable[[Any], None]] = None

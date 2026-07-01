@@ -2,6 +2,35 @@ from ..shared import *
 
 
 class ClassifierBrowserMixin:
+    def _emit_browser_warning(self, payload: Any) -> None:
+        callback = getattr(self, "browser_warning_callback", None)
+        if not callable(callback):
+            return
+        try:
+            callback(payload)
+        except Exception:
+            pass
+
+    def _describe_browser_validation(self, url: str) -> dict[str, str]:
+        lowered = str(url or "").lower()
+        if "mcmod.cn" in lowered:
+            return {
+                "kind": "browser-validation",
+                "title": "需要浏览器验证",
+                "message": (
+                    "接下来会临时弹出浏览器窗口，请手动完成 MC百科 的安全验证。\n\n"
+                    "验证通过后程序会自动继续，无需重复点击开始。"
+                ),
+            }
+        return {
+            "kind": "browser-validation",
+            "title": "需要浏览器验证",
+            "message": (
+                "接下来会临时弹出浏览器窗口，请手动完成 CurseForge / Cloudflare 的验证。\n\n"
+                "验证通过后程序会自动继续，无需重复点击开始。"
+            ),
+        }
+
     def _is_captcha_page(self, html: str) -> bool:
         """检测 mc百科验证码 或 CloudFlare 拦截页面"""
         if not html:
@@ -56,13 +85,9 @@ class ClassifierBrowserMixin:
                     return True
                 except Exception:
                     continue
-            if self.browser_warning_callback:
-                try:
-                    self.browser_warning_callback(
-                        "未找到 Chrome 或 Edge 浏览器，MC百科/CurseForge 查询将不可用。\n\n请安装 Chrome 或确保 Edge 在默认路径。"
-                    )
-                except Exception:
-                    pass
+            self._emit_browser_warning(
+                "未找到 Chrome 或 Edge 浏览器，MC百科/CurseForge 查询将不可用。\n\n请安装 Chrome 或确保 Edge 在默认路径。"
+            )
             return False
 
     def _cleanup_browser(self):
@@ -125,6 +150,7 @@ class ClassifierBrowserMixin:
             if self._is_captcha_page(html):
                 if self._captcha_lock.acquire(blocking=False):
                     # 获得解决权：切到验证码标签页 → 弹出浏览器窗口
+                    self._emit_browser_warning(self._describe_browser_validation(url))
                     try:
                         tab.set.activate()  # 切到验证码标签页
                     except Exception:

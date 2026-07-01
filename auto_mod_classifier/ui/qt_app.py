@@ -717,7 +717,7 @@ class App(FluentWindow):
             panel = self.get_panel(panel_key)
 
             if kind == "warning":
-                self.show_warning(str(payload))
+                self._show_runtime_warning(payload)
                 continue
 
             if kind == "log":
@@ -1167,6 +1167,16 @@ class App(FluentWindow):
 
     def show_warning(self, message: str) -> None:
         themed_warning(self, APP_TITLE, message)
+
+    def _show_runtime_warning(self, payload: Any) -> None:
+        if isinstance(payload, dict) and str(payload.get("kind", "")).strip() == "browser-validation":
+            themed_warning(
+                self,
+                str(payload.get("title") or "需要浏览器验证"),
+                str(payload.get("message") or ""),
+            )
+            return
+        self.show_warning(str(payload))
 
     def show_error(self, message: str) -> None:
         themed_critical(self, APP_TITLE, message)
