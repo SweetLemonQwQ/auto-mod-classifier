@@ -76,6 +76,7 @@ DEFAULT_UI_SETTINGS: Dict[str, Any] = {
     "filter_use_offline_database": False,
     "filter_auto_update_offline_database": True,
     "filter_use_mcmod": True,
+    "filter_use_curseforge_api": True,
     "filter_use_curseforge": False,
     "filter_second_pass": False,
     "server_output_path": "",
@@ -282,6 +283,7 @@ class App(FluentWindow):
         settings_widgets.filter_use_offline_db_checkbox.setChecked(bool(data.get("filter_use_offline_database", False)))
         settings_widgets.filter_auto_update_offline_db_checkbox.setChecked(bool(data.get("filter_auto_update_offline_database", True)))
         settings_widgets.filter_use_mcmod_checkbox.setChecked(bool(data.get("filter_use_mcmod", True)))
+        settings_widgets.filter_use_curseforge_api_checkbox.setChecked(bool(data.get("filter_use_curseforge_api", True)))
         settings_widgets.filter_use_cf_checkbox.setChecked(bool(data.get("filter_use_curseforge", False)))
         settings_widgets.filter_second_pass_checkbox.setChecked(bool(data.get("filter_second_pass", False)))
         settings_widgets.server_output_path_edit.setText(str(data.get("server_output_path", "")))
@@ -306,6 +308,7 @@ class App(FluentWindow):
             "filter_use_offline_database": settings_widgets.filter_use_offline_db_checkbox.isChecked(),
             "filter_auto_update_offline_database": settings_widgets.filter_auto_update_offline_db_checkbox.isChecked(),
             "filter_use_mcmod": settings_widgets.filter_use_mcmod_checkbox.isChecked(),
+            "filter_use_curseforge_api": settings_widgets.filter_use_curseforge_api_checkbox.isChecked(),
             "filter_use_curseforge": settings_widgets.filter_use_cf_checkbox.isChecked(),
             "filter_second_pass": settings_widgets.filter_second_pass_checkbox.isChecked(),
             "server_output_path": settings_widgets.server_output_path_edit.text().strip(),
@@ -503,6 +506,7 @@ class App(FluentWindow):
             use_offline_database=settings_widgets.filter_use_offline_db_checkbox.isChecked(),
             auto_update_offline_database=settings_widgets.filter_auto_update_offline_db_checkbox.isChecked(),
             use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
+            use_curseforge_api=settings_widgets.filter_use_curseforge_api_checkbox.isChecked(),
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
             enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
         )
@@ -562,6 +566,7 @@ class App(FluentWindow):
             use_offline_database=settings_widgets.filter_use_offline_db_checkbox.isChecked(),
             auto_update_offline_database=settings_widgets.filter_auto_update_offline_db_checkbox.isChecked(),
             use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
+            use_curseforge_api=settings_widgets.filter_use_curseforge_api_checkbox.isChecked(),
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
             enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
             auto_download_java=settings_widgets.auto_download_java_checkbox.isChecked(),

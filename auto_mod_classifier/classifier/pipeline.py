@@ -132,6 +132,7 @@ class ClassificationPipeline:
 
         retry_classifier = ClassifierCore()
         retry_classifier.use_curseforge = options.use_curseforge
+        retry_classifier.use_curseforge_api = options.use_curseforge_api
         retry_classifier.use_offline_database = options.use_offline_database
         retry_classifier.download_source = options.download_source
         retry_pipeline = ClassificationPipeline(retry_classifier)
@@ -203,18 +204,21 @@ def classify_jars_parallel(
     jar_files: Sequence[Path],
     use_mcmod: bool,
     use_curseforge: bool = False,
+    use_curseforge_api: bool = True,
     use_offline_database: bool = False,
     download_source: str = DOWNLOAD_SOURCE_SMART,
     progress_callback: Optional[Callable[[int, int, Path], None]] = None,
     result_callback: Optional[Callable[[int, int, Path, Dict[str, Any]], None]] = None,
 ) -> List[Dict[str, Any]]:
     classifier.download_source = download_source
+    classifier.use_curseforge_api = use_curseforge_api
     pipeline = ClassificationPipeline(classifier)
     return pipeline.classify_jars_parallel(
         jar_files,
         ClassificationOptions(
             use_mcmod=use_mcmod,
             use_curseforge=use_curseforge,
+            use_curseforge_api=use_curseforge_api,
             use_offline_database=use_offline_database,
             download_source=download_source,
         ),
@@ -227,6 +231,7 @@ def rerun_unknown_classifications(
     rows: List[Dict[str, Any]],
     use_mcmod: bool,
     use_curseforge: bool = False,
+    use_curseforge_api: bool = True,
     use_offline_database: bool = False,
     download_source: str = DOWNLOAD_SOURCE_SMART,
     progress_callback: Optional[Callable[[int, int, Path], None]] = None,
@@ -238,6 +243,7 @@ def rerun_unknown_classifications(
         ClassificationOptions(
             use_mcmod=use_mcmod,
             use_curseforge=use_curseforge,
+            use_curseforge_api=use_curseforge_api,
             use_offline_database=use_offline_database,
             download_source=download_source,
         ),

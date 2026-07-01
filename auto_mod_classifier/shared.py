@@ -323,6 +323,7 @@ class ModTaskOptions:
     download_source: str
     dry_run: bool
     use_mcmod: bool
+    use_curseforge_api: bool
     use_curseforge: bool
     use_offline_database: bool
     auto_update_offline_database: bool
@@ -338,6 +339,7 @@ class ServerTaskOptions:
     output_dir: Path
     download_source: str
     use_mcmod: bool
+    use_curseforge_api: bool
     use_curseforge: bool
     use_offline_database: bool
     auto_update_offline_database: bool

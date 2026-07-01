@@ -973,7 +973,7 @@ class QtPageFactory:
         # 筛选规则
         f_card, f_l = self._create_card("筛选规则", "影响模组筛选和开服时的模组处理。")
         f_l.setSpacing(SPACING_SM)
-        f_dry = CheckBox("仅预览模组筛选结果，不移动原文件", f_card)
+        f_dry = CheckBox("仅筛选模组，不移动模组文件", f_card)
         f_dry.setChecked(False)
         f_l.addWidget(f_dry)
         f_offline = CheckBox("优先使用本地离线库（程序目录旁的 db.sqlite）", f_card)
@@ -982,11 +982,13 @@ class QtPageFactory:
         f_offline_auto_update = CheckBox("自动检查并更新本地离线库", f_card)
         f_offline_auto_update.setChecked(True)
         f_l.addWidget(f_offline_auto_update)
-        f_mc = CheckBox("查询 MC百科", f_card)
+        f_mc = CheckBox("查询 MC百科（需要走浏览器，并且手动填写一次验证码）", f_card)
         f_mc.setChecked(True)
-        f_cf = CheckBox("查询 CurseForge", f_card)
-        f_sp = CheckBox("启用进一步确认", f_card)
-        for cb in (f_mc, f_cf, f_sp):
+        f_cf_api = CheckBox("查询 CurseForge API", f_card)
+        f_cf_api.setChecked(True)
+        f_cf = CheckBox("查询 CurseForge（需要走浏览器，不稳定容易风控）", f_card)
+        f_sp = CheckBox("启用二次确认", f_card)
+        for cb in (f_mc, f_cf_api, f_cf, f_sp):
             f_l.addWidget(cb)
 
         # 开服默认
@@ -1091,6 +1093,7 @@ class QtPageFactory:
                 filter_use_offline_db_checkbox=f_offline,
                 filter_auto_update_offline_db_checkbox=f_offline_auto_update,
                 filter_use_mcmod_checkbox=f_mc,
+                filter_use_curseforge_api_checkbox=f_cf_api,
                 filter_use_cf_checkbox=f_cf,
                 filter_second_pass_checkbox=f_sp,
                 server_output_path_edit=sv_op,

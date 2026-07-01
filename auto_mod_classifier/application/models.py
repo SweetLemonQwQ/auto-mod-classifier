@@ -23,6 +23,7 @@ class ScanModsRequest:
     dry_run: bool
     use_mcmod: bool
     use_curseforge: bool
+    use_curseforge_api: bool = True
     use_offline_database: bool = False
     auto_update_offline_database: bool = True
     enable_second_pass: bool = False
@@ -38,6 +39,7 @@ class BuildServerRequest:
     download_source: str
     use_mcmod: bool
     use_curseforge: bool
+    use_curseforge_api: bool = True
     use_offline_database: bool = False
     auto_update_offline_database: bool = True
     enable_second_pass: bool = False

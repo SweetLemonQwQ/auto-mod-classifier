@@ -398,7 +398,7 @@ class OfflineDatabaseSource:
             classification = self.modrinth_source.lookup_by_project_id(meta, match.mapped_modrinth_project)
             if classification is not None:
                 return classification
-        if match.curseforge_project:
+        if match.curseforge_project and getattr(self.classifier, "use_curseforge_api", True):
             classification = self.curseforge_source.lookup_by_file_identity(
                 meta,
                 project_id=match.curseforge_project,

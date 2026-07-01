@@ -10,6 +10,7 @@ class ClassificationOptions:
 
     use_mcmod: bool
     use_curseforge: bool = False
+    use_curseforge_api: bool = True
     use_offline_database: bool = False
     download_source: str = "smart"
 
