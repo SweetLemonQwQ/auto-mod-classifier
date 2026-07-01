@@ -1,6 +1,5 @@
 import json
 import re
-import tempfile
 import urllib.parse
 import zipfile
 from pathlib import Path
@@ -423,10 +422,6 @@ class CurseforgeRemoteSource:
             html = self.classifier.mcmod_text_request(search_key, url)
             if not html:
                 continue
-            try:
-                Path(tempfile.gettempdir(), "_cf_debug_search.html").write_text(html[:10000], encoding="utf-8")
-            except Exception:
-                pass
 
             seen = set()
             links: list[tuple[str, str]] = []
@@ -442,7 +437,6 @@ class CurseforgeRemoteSource:
                     if href not in seen and title and title != "Download" and title != "Relations" and title != "Comments":
                         seen.add(href)
                         links.append((title, "https://www.curseforge.com" + href))
-            self.classifier._dlog(f"[cf] 搜索 {query}: 找到 {len(links)} 个链接从 {len(html)}B")
 
             for title, link in links[:3]:
                 page_key = f"cf-page::{link}"
@@ -463,13 +457,6 @@ class CurseforgeRemoteSource:
                         re.I,
                     )
                     if not fallback_match:
-                        try:
-                            body_start = page_html.find("<body")
-                            save_html = page_html[body_start:body_start + 200000] if body_start > 0 else page_html[:200000]
-                            Path(tempfile.gettempdir(), "_cf_debug_detail.html").write_text(save_html, encoding="utf-8")
-                            self.classifier._dlog("[cf] Environment 未匹配，已保存 body HTML")
-                        except Exception:
-                            pass
                         continue
                     server_side = fallback_match.group(1).strip()
 

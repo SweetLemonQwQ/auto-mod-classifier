@@ -2,13 +2,6 @@ from ..shared import *
 
 
 class ClassifierBrowserMixin:
-    def _dlog(self, msg: str) -> None:
-        try:
-            with open(self._dlog_file, "a", encoding="utf-8") as f:
-                f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
-        except Exception:
-            pass
-
     def _is_captcha_page(self, html: str) -> bool:
         """检测 mc百科验证码 或 CloudFlare 拦截页面"""
         if not html:
@@ -60,11 +53,9 @@ class ClassifierBrowserMixin:
                     self._browser_tabs = tabs
                     self._browser_main_page = main
                     atexit.register(self._cleanup_browser)
-                    self._dlog(f"浏览器就绪(屏幕外): {len(tabs)} 标签页")
                     return True
                 except Exception:
                     continue
-            self._dlog("浏览器启动失败：未找到 Chrome/Edge")
             if self.browser_warning_callback:
                 try:
                     self.browser_warning_callback(
@@ -82,9 +73,8 @@ class ClassifierBrowserMixin:
                 except Exception:
                     pass
                 self._browser_tabs = []
-        # 清理浏览器缓存/临时文件（不删 debug 日志）
-        for pattern in ["_mcmod_captcha*", "_mcmod_browser_data*",
-                        "_cf_debug_*.html", "_mcmod_cookies.json"]:
+        # 清理浏览器缓存和临时文件
+        for pattern in ["_mcmod_captcha*", "_mcmod_browser_data*", "_mcmod_cookies.json"]:
             for f in Path(tempfile.gettempdir()).glob(pattern):
                 try:
                     if f.is_dir():
@@ -114,8 +104,7 @@ class ClassifierBrowserMixin:
             pass
 
     def _browser_fetch(self, url: str) -> Optional[str]:
-        """浏览器标签页池获取页面（带耗时日志）"""
-        t0 = time.perf_counter()
+        """通过浏览器标签页池获取页面内容。"""
         if not self._browser_tabs and not self._init_browser():
             return None
         tab = None
@@ -126,22 +115,16 @@ class ClassifierBrowserMixin:
                     self._browser_tabs[i] = (t, True)
                     break
         if tab is None:
-            self._dlog(f"[{time.perf_counter()-t0:.1f}s] 无空闲标签页")
             return None
         try:
-            t_nav_start = time.perf_counter()
             tab.get(url, timeout=15)
             # CurseForge React 渲染需要额外等待
             if "curseforge.com" in url:
                 time.sleep(2)
-            nav_time = time.perf_counter() - t_nav_start
             html = tab.html
             if self._is_captcha_page(html):
-                t_cap = time.perf_counter()
-                self._dlog(f"[+{nav_time:.1f}s] 验证码页 {url[:60]}")
                 if self._captcha_lock.acquire(blocking=False):
                     # 获得解决权：切到验证码标签页 → 弹出浏览器窗口
-                    self._dlog("[captcha] 弹出浏览器窗口，等你填验证码")
                     try:
                         tab.set.activate()  # 切到验证码标签页
                     except Exception:
@@ -155,27 +138,18 @@ class ClassifierBrowserMixin:
                         except Exception:
                             continue
                         if not self._is_captcha_page(html) and len(html) > 200:
-                            self._dlog(f"[captcha] 验证码通过 {time.perf_counter()-t_cap:.1f}s")
                             break
                     self._browser_hide()
                     self._captcha_done.set()
                     self._captcha_lock.release()
                 else:
                     # 另一个标签页正在处理，等待它完成
-                    self._dlog("[captcha] 等另一个标签页的验证码解决")
                     self._captcha_done.wait(timeout=130)
                     # 重新加载本标签页
                     tab.get(url, timeout=15)
                     html = tab.html
-                    self._dlog(f"[captcha] 重新加载 {len(html)}B")
-            else:
-                if len(html) < 5000:
-                    self._dlog(f"[+{nav_time:.1f}s] 页面太小({len(html)}B) {url[:60]}")
-                else:
-                    self._dlog(f"[+{nav_time:.1f}s] OK {url[:60]} ({len(html)}B)")
             return html
-        except Exception as e:
-            self._dlog(f"[+{time.perf_counter()-t0:.1f}s] 异常: {e}")
+        except Exception:
             return None
         finally:
             with self._browser_tab_cond:
@@ -192,7 +166,6 @@ class ClassifierBrowserMixin:
             for c in self._browser_tabs[0][0].cookies():
                 self._mcmod_session.cookies.set(c.get("name", ""), c.get("value", ""))
             self._save_mcmod_cookies()
-            self._dlog("浏览器 cookies 已同步到 curl_cffi")
         except Exception:
             pass
 

@@ -98,19 +98,14 @@ class ClassifierNetworkMixin:
                             self._mcmod_captcha_hits = {}
                         hits = self._mcmod_captcha_hits.get(cache_key, 0) + 1
                         self._mcmod_captcha_hits[cache_key] = hits
-                        self._dlog(f"[{cache_key[:30]}] 验证码 #{hits} url={url[:80]}")
                         # 浏览器已经在 http_get_text 里尝试过了，这里只是记录
                         time.sleep(0.3 * (attempt + 1))
                         continue
                     elif not self.is_mcmod_rate_limited(html):
-                        self._dlog(f"[{cache_key[:30]}] OK {len(html)} 字节")
                         with self.cache_lock:
                             self.cache[cache_key] = html
                         return html
-                    else:
-                        self._dlog(f"[{cache_key[:30]}] 限流，重试")
                 time.sleep(0.2 * (attempt + 1))
-            self._dlog(f"[{cache_key[:30]}] 放弃（{max_attempts}次未成功）")
             return ""
         finally:
             with self.cache_lock:
@@ -149,13 +144,6 @@ class ClassifierNetworkMixin:
                     event.set()
         return value
 
-    def cached_json_request(self, cache_key: str, url: str, use_throttle: bool = True) -> Optional[dict]:
-        value = self.get_cached_value(
-            cache_key,
-            lambda: (self.throttle_request(), self.http_get_json(url))[1] if use_throttle else self.http_get_json(url),
-        )
-        return value if isinstance(value, dict) else None
-
     def modrinth_json_request(self, cache_key: str, url: str, max_attempts: int = 3) -> Optional[dict]:
         def loader() -> Optional[dict]:
             last_payload: Optional[dict] = None
@@ -184,13 +172,6 @@ class ClassifierNetworkMixin:
 
         value = self.get_cached_value(cache_key, loader)
         return value if isinstance(value, dict) else None
-
-    def cached_text_request(self, cache_key: str, url: str) -> str:
-        value = self.get_cached_value(
-            cache_key,
-            lambda: (self.throttle_request(), self.http_get_text(url))[1],
-        )
-        return value if isinstance(value, str) else ""
 
     def http_get_json(self, url: str) -> Optional[dict]:
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})

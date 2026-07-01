@@ -35,9 +35,3 @@ class ClassifierCore(
         self.use_curseforge: bool = False
         # 由界面层注入提示回调，核心层不直接依赖 Tk 弹窗
         self.browser_warning_callback: Optional[Callable[[str], None]] = None
-        # 调试日志
-        self._dlog_file = Path(tempfile.gettempdir()) / "_mcmod_debug.log"
-        try:
-            self._dlog_file.write_text("", encoding="utf-8")
-        except Exception:
-            pass

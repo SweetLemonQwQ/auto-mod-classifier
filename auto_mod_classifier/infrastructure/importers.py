@@ -151,14 +151,6 @@ def _copy_tree_if_exists(source_root: Path, source_name: str, target_root: Path)
         shutil.copytree(candidate, target_root, dirs_exist_ok=True)
 
 
-def _find_nested_root(base_dir: Path, accepted_names: Iterable[str]) -> Optional[Path]:
-    accepted = {name.lower() for name in accepted_names}
-    for child in sorted(base_dir.iterdir(), key=lambda item: item.name.lower()):
-        if child.is_dir() and child.name.lower() in accepted:
-            return child
-    return None
-
-
 def _build_single_version_directory_hint(source_path: Path) -> Optional[str]:
     """识别误选 versions/某版本 目录的常见情况，尽早给出明确提示。"""
     if source_path.parent.name.lower() != "versions":

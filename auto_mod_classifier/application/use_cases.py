@@ -1,3 +1,4 @@
+import inspect
 import traceback
 from typing import Any, Callable, Optional
 
@@ -71,7 +72,7 @@ class BuildServerUseCase:
         set_runtime_ref: Callable[[Any], None],
         request_version_choice: Callable[[list], Optional[Any]],
         request_checklist: Callable[[str, str, list], Optional[list]],
-        request_continue_wait: Callable[[str, str, int], bool],
+        request_continue_wait: Optional[Callable[[str, str, int], bool]] = None,
     ) -> None:
         # 一键开服同样先走输入整理，这样后面才能轻松支持目录、mrpack、zip 等来源。
         emit("stage", {"stage_key": "scan", "detail": "正在准备一键开服输入源"})
@@ -92,14 +93,27 @@ class BuildServerUseCase:
             emit("stage", {"stage_key": "scan", "detail": "输入源准备完成，正在启动制作流程"})
             emit("status", "输入源准备完成，正在启动制作流程…")
             service_emit = _wrap_progress_emit(emit, progress_offset)
-            self.server_build_service.run(
-                source,
-                request,
-                service_emit,
-                set_runtime_ref,
-                request_version_choice,
-                request_checklist,
-                request_continue_wait,
-            )
+            # 兼容旧服务签名：早期实现没有 request_continue_wait 回调。
+            run_signature = inspect.signature(self.server_build_service.run)
+            if "request_continue_wait" in run_signature.parameters:
+                continue_wait = request_continue_wait or (lambda _title, _message, _seconds: True)
+                self.server_build_service.run(
+                    source,
+                    request,
+                    service_emit,
+                    set_runtime_ref,
+                    request_version_choice,
+                    request_checklist,
+                    continue_wait,
+                )
+            else:
+                self.server_build_service.run(
+                    source,
+                    request,
+                    service_emit,
+                    set_runtime_ref,
+                    request_version_choice,
+                    request_checklist,
+                )
         finally:
             source.dispose()
