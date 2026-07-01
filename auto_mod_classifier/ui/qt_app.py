@@ -29,7 +29,6 @@ from qfluentwidgets import (
     InfoBarPosition,
     NavigationItemPosition,
     Theme,
-    qconfig,
     setTheme,
     setThemeColor,
 )
@@ -88,6 +87,36 @@ DEFAULT_UI_SETTINGS: Dict[str, Any] = {
 }
 
 
+def _resolve_windows_system_theme() -> Theme:
+    if sys.platform != "win32" or winreg is None:
+        return Theme.DARK
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        ) as key:
+            apps_use_light_theme, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+    except OSError:
+        return Theme.DARK
+    return Theme.LIGHT if int(apps_use_light_theme) == 1 else Theme.DARK
+
+
+def resolve_effective_theme(theme_mode: Theme, app: Optional[QApplication] = None) -> Theme:
+    """把 AUTO 收口成明确的浅色或深色，避免不同主题系统各自判断。"""
+    if theme_mode != Theme.AUTO:
+        return theme_mode
+    app = app or QApplication.instance()
+    if app is None:
+        return Theme.DARK
+    color_scheme = app.styleHints().colorScheme()
+    if color_scheme == Qt.ColorScheme.Dark:
+        return Theme.DARK
+    if color_scheme == Qt.ColorScheme.Light:
+        return Theme.LIGHT
+    # Windows 上有些环境不会把系统主题明确暴露给 Qt，这里退回注册表判定。
+    return _resolve_windows_system_theme()
+
+
 class App(FluentWindow):
     """主窗口控制器，只负责任务编排、事件回写和页面切换。"""
 
@@ -115,7 +144,7 @@ class App(FluentWindow):
         self._build_window()
         self._build_pages()
         self._apply_settings_to_widgets()
-        self._apply_theme_visuals(self._theme_mode, sync_fluent_theme=False)
+        self._apply_theme_visuals(self._theme_mode)
         self._refresh_home_overview()
         self._refresh_report_sections()
 
@@ -215,33 +244,6 @@ class App(FluentWindow):
         if callable(scroll_to_top):
             scroll_to_top()
 
-    def _resolve_effective_theme(self, theme_mode: Theme) -> Theme:
-        if theme_mode != Theme.AUTO:
-            return theme_mode
-        app = QApplication.instance()
-        if app is None:
-            return Theme.DARK
-        color_scheme = app.styleHints().colorScheme()
-        if color_scheme == Qt.ColorScheme.Dark:
-            return Theme.DARK
-        if color_scheme == Qt.ColorScheme.Light:
-            return Theme.LIGHT
-        # Windows 上有些环境不会把系统主题明确暴露给 Qt，这里退回注册表判定。
-        return self._resolve_windows_system_theme()
-
-    def _resolve_windows_system_theme(self) -> Theme:
-        if sys.platform != "win32" or winreg is None:
-            return Theme.DARK
-        try:
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            ) as key:
-                apps_use_light_theme, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-        except OSError:
-            return Theme.DARK
-        return Theme.LIGHT if int(apps_use_light_theme) == 1 else Theme.DARK
-
     def _theme_from_index(self, index: int) -> Theme:
         theme_map = {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}
         return theme_map.get(index, Theme.DARK)
@@ -326,16 +328,16 @@ class App(FluentWindow):
             "animation": settings_widgets.animation_checkbox.isChecked(),
         }
 
-    def _apply_theme_visuals(self, theme_mode: Theme, *, sync_fluent_theme: bool) -> None:
-        effective_theme = self._resolve_effective_theme(theme_mode)
+    def _apply_theme_visuals(self, theme_mode: Theme) -> None:
+        effective_theme = resolve_effective_theme(theme_mode)
         palette_name = "dark" if effective_theme == Theme.DARK else "light"
         set_palette(palette_name)
         self.setStyleSheet(build_window_stylesheet())
         light_bg = QColor("#F4F6FA")
         dark_bg = QColor("#0D1119")
         self.setCustomBackgroundColor(light_bg, dark_bg)
-        if sync_fluent_theme:
-            setTheme(theme_mode)
+        # Fluent 内置控件也只接收最终主题，避免和自定义 QSS 各自判断 AUTO。
+        setTheme(effective_theme)
         refresh_themed_styles()
         self._refresh_visible_widget_styles()
 
@@ -355,27 +357,18 @@ class App(FluentWindow):
     def _on_system_color_scheme_changed(self, _color_scheme: Qt.ColorScheme) -> None:
         if self._theme_mode != Theme.AUTO:
             return
-        self._apply_theme_visuals(Theme.AUTO, sync_fluent_theme=True)
+        self._apply_theme_visuals(Theme.AUTO)
 
     def on_theme_changed(self, index: int) -> None:
         theme = self._theme_from_index(index)
         self._theme_mode = theme
-        # 1) 同步切换自定义 palette（背景/卡片/边框/文字/卡片悬浮等）
-        # 2) 重新生成主窗口全局 QSS（背景、QMenu、按钮、输入框、表格等大块色值都靠它）
-        # 3) 强制让 FluentWindow 的 paintEvent 用我们调色板的底色。
-        #    BackgroundAnimationWidget 监听 qconfig.themeChanged 调 _updateBackgroundColor，
-        #    但它读的是 isDarkTheme()（看 qconfig.theme），不是我们自己的 palette。
-        #    AUTO 模式下 qconfig.theme 会是 LIGHT/DARK，行为和 setTheme 一致。
-        #    但 setCustomBackgroundColor 必须在 setStyleSheet 之后调，且要在 qconfig.themeChanged
-        #    信号真正触发动画 _结束_ 之前，让 backgroundColor 切到对的色。
-        # 4) 再调 qfluentwidgets setTheme，让内置组件（侧边栏/导航/标题栏）刷一遍
-        self._apply_theme_visuals(theme, sync_fluent_theme=True)
+        self._apply_theme_visuals(theme)
 
     def save_settings(self) -> None:
         self._settings_data = self._collect_settings_data()
         self._save_settings_data(self._settings_data)
         self._theme_mode = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
-        self._apply_theme_visuals(self._theme_mode, sync_fluent_theme=True)
+        self._apply_theme_visuals(self._theme_mode)
         InfoBar.success(
             "设置已保存",
             "当前设置已经保存，下次启动会继续使用这些值。",
@@ -388,7 +381,7 @@ class App(FluentWindow):
         self._settings_data = dict(DEFAULT_UI_SETTINGS)
         self._apply_settings_to_widgets()
         self._theme_mode = self._theme_from_index(int(self._settings_data.get("theme_index", 0)))
-        self._apply_theme_visuals(self._theme_mode, sync_fluent_theme=True)
+        self._apply_theme_visuals(self._theme_mode)
         self._save_settings_data(self._settings_data)
         InfoBar.success(
             "设置已重置",
@@ -1252,7 +1245,11 @@ def main() -> None:
         except Exception:
             pass
     theme_index = int(startup_settings.get("theme_index", DEFAULT_UI_SETTINGS["theme_index"]))
-    setTheme({0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}.get(theme_index, Theme.DARK))
+    startup_theme = resolve_effective_theme(
+        {0: Theme.DARK, 1: Theme.LIGHT, 2: Theme.AUTO}.get(theme_index, Theme.DARK),
+        app,
+    )
+    setTheme(startup_theme)
     setThemeColor(QColor(ACCENT_COLOR))
 
     window = App()
