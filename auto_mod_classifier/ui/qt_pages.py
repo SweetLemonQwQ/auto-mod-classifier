@@ -979,6 +979,9 @@ class QtPageFactory:
         f_offline = CheckBox("优先使用本地离线库（程序目录旁的 db.sqlite）", f_card)
         f_offline.setChecked(False)
         f_l.addWidget(f_offline)
+        f_offline_auto_update = CheckBox("自动检查并更新本地离线库", f_card)
+        f_offline_auto_update.setChecked(True)
+        f_l.addWidget(f_offline_auto_update)
         f_mc = CheckBox("查询 MC百科", f_card)
         f_mc.setChecked(True)
         f_cf = CheckBox("查询 CurseForge", f_card)
@@ -1086,6 +1089,7 @@ class QtPageFactory:
             widgets=SettingsWidgets(
                 filter_dry_run_checkbox=f_dry,
                 filter_use_offline_db_checkbox=f_offline,
+                filter_auto_update_offline_db_checkbox=f_offline_auto_update,
                 filter_use_mcmod_checkbox=f_mc,
                 filter_use_cf_checkbox=f_cf,
                 filter_second_pass_checkbox=f_sp,

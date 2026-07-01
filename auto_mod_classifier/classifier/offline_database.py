@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 import threading
+import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from ..shared import CLIENT_ENTRYPOINTS, Classification, LoaderType, ModMeta, get_optional_offline_db_path
 
@@ -12,9 +15,14 @@ from ..shared import CLIENT_ENTRYPOINTS, Classification, LoaderType, ModMeta, ge
 class OfflineModDatabase:
     """Voxelum 离线库查询器。"""
 
+    RELEASE_API_URL = "https://api.github.com/repos/Voxelum/minecraft-mods-database/releases/latest"
+    USER_AGENT = "AutoModClassifier/3.00"
+
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = Path(db_path) if db_path else get_optional_offline_db_path()
         self._local = threading.local()
+        self._update_lock = threading.Lock()
+        self._last_update_summary = ""
 
     def is_available(self) -> bool:
         return self.db_path.exists() and self.db_path.is_file()
@@ -66,6 +74,56 @@ class OfflineModDatabase:
             connection.close()
         finally:
             self._local.connection = None
+
+    def ensure_latest_database(
+        self,
+        *,
+        auto_update: bool,
+        log_callback: Optional[Callable[[str], None]] = None,
+    ) -> bool:
+        """按需检查并更新离线库；失败时静默回退，不中断主流程。"""
+        if not auto_update:
+            self._log(log_callback, "已关闭离线库自动检查更新，本次直接使用本地现有库。")
+            return self.is_available()
+
+        with self._update_lock:
+            try:
+                release = self._fetch_latest_release()
+            except Exception as exc:
+                self._log(log_callback, f"离线库检查已跳过：暂时无法连接更新源（{exc}）。")
+                return self.is_available()
+
+            db_asset = self._pick_asset(release, "db.sqlite")
+            sha1_asset = self._pick_asset(release, "db.sqlite.sha1")
+            if not db_asset or not sha1_asset:
+                self._log(log_callback, "离线库检查已跳过：未找到可用的数据库发布文件。")
+                return self.is_available()
+
+            latest_tag = str(release.get("tag_name") or "").strip()
+            try:
+                latest_sha1 = self._download_text(str(sha1_asset.get("browser_download_url") or "")).strip().lower()
+            except Exception as exc:
+                self._log(log_callback, f"离线库检查已跳过：无法获取版本校验信息（{exc}）。")
+                return self.is_available()
+
+            local_sha1 = self._compute_sha1(self.db_path) if self.is_available() else ""
+            if self.is_available() and local_sha1 and latest_sha1 and local_sha1 == latest_sha1:
+                self._last_update_summary = f"离线库已是最新版本：{latest_tag or '当前版本'}"
+                self._log(log_callback, self._last_update_summary)
+                return True
+
+            try:
+                self._download_database_file(
+                    str(db_asset.get("browser_download_url") or ""),
+                    latest_sha1,
+                )
+            except Exception as exc:
+                self._log(log_callback, f"离线库更新已跳过：下载失败（{exc}）。")
+                return self.is_available()
+
+            self._last_update_summary = f"离线库已更新：{latest_tag or '最新版本'}"
+            self._log(log_callback, self._last_update_summary)
+            return True
 
     def _get_connection(self) -> sqlite3.Connection:
         connection = getattr(self._local, "connection", None)
@@ -161,3 +219,57 @@ class OfflineModDatabase:
             reason_parts.append(forge_text)
 
         return "offline-db", "；".join(reason_parts), evidence_url
+
+    def _fetch_latest_release(self) -> dict:
+        request = urllib.request.Request(
+            self.RELEASE_API_URL,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": self.USER_AGENT,
+            },
+        )
+        with urllib.request.urlopen(request, timeout=12) as response:
+            return json.loads(response.read().decode("utf-8", errors="ignore"))
+
+    def _pick_asset(self, release: dict, asset_name: str) -> Optional[dict]:
+        for asset in release.get("assets", []) or []:
+            if str(asset.get("name") or "").strip() == asset_name:
+                return asset
+        return None
+
+    def _download_text(self, url: str) -> str:
+        if not url:
+            raise RuntimeError("下载地址为空")
+        request = urllib.request.Request(url, headers={"User-Agent": self.USER_AGENT})
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return response.read().decode("utf-8", errors="ignore")
+
+    def _download_database_file(self, url: str, expected_sha1: str) -> None:
+        if not url:
+            raise RuntimeError("数据库下载地址为空")
+
+        self.close()
+        temp_path = self.db_path.with_suffix(".sqlite.tmp")
+        request = urllib.request.Request(url, headers={"User-Agent": self.USER_AGENT})
+        with urllib.request.urlopen(request, timeout=120) as response, temp_path.open("wb") as fp:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                fp.write(chunk)
+
+        downloaded_sha1 = self._compute_sha1(temp_path).lower()
+        if expected_sha1 and downloaded_sha1 != expected_sha1.lower():
+            temp_path.unlink(missing_ok=True)
+            raise RuntimeError("下载完成，但校验失败")
+
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path.replace(self.db_path)
+
+    def _log(self, log_callback: Optional[Callable[[str], None]], message: str) -> None:
+        if log_callback is None:
+            return
+        try:
+            log_callback(message)
+        except Exception:
+            pass

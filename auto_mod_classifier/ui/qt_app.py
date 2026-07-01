@@ -74,6 +74,7 @@ SETTINGS_FILE_PATH = Path(__file__).resolve().parents[2] / "auto_mod_classifier_
 DEFAULT_UI_SETTINGS: Dict[str, Any] = {
     "filter_dry_run": False,
     "filter_use_offline_database": False,
+    "filter_auto_update_offline_database": True,
     "filter_use_mcmod": True,
     "filter_use_curseforge": False,
     "filter_second_pass": False,
@@ -279,6 +280,7 @@ class App(FluentWindow):
         data = self._settings_data
         settings_widgets.filter_dry_run_checkbox.setChecked(bool(data.get("filter_dry_run", False)))
         settings_widgets.filter_use_offline_db_checkbox.setChecked(bool(data.get("filter_use_offline_database", False)))
+        settings_widgets.filter_auto_update_offline_db_checkbox.setChecked(bool(data.get("filter_auto_update_offline_database", True)))
         settings_widgets.filter_use_mcmod_checkbox.setChecked(bool(data.get("filter_use_mcmod", True)))
         settings_widgets.filter_use_cf_checkbox.setChecked(bool(data.get("filter_use_curseforge", False)))
         settings_widgets.filter_second_pass_checkbox.setChecked(bool(data.get("filter_second_pass", False)))
@@ -302,6 +304,7 @@ class App(FluentWindow):
         return {
             "filter_dry_run": settings_widgets.filter_dry_run_checkbox.isChecked(),
             "filter_use_offline_database": settings_widgets.filter_use_offline_db_checkbox.isChecked(),
+            "filter_auto_update_offline_database": settings_widgets.filter_auto_update_offline_db_checkbox.isChecked(),
             "filter_use_mcmod": settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             "filter_use_curseforge": settings_widgets.filter_use_cf_checkbox.isChecked(),
             "filter_second_pass": settings_widgets.filter_second_pass_checkbox.isChecked(),
@@ -498,12 +501,15 @@ class App(FluentWindow):
             download_source=self.resolve_download_source(settings_widgets.server_download_source_combo),
             dry_run=settings_widgets.filter_dry_run_checkbox.isChecked(),
             use_offline_database=settings_widgets.filter_use_offline_db_checkbox.isChecked(),
+            auto_update_offline_database=settings_widgets.filter_auto_update_offline_db_checkbox.isChecked(),
             use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
             enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
         )
         if options.use_offline_database and not get_optional_offline_db_path().exists():
             self.append_log("mod", f"未在程序目录旁找到可选离线库：{OFFLINE_DB_FILE_NAME}，本次会自动继续走联网查询。")
+        elif options.use_offline_database and options.auto_update_offline_database:
+            self.append_log("mod", "已开启离线库自动检查更新，开始任务前会先尝试检查本地库。")
         self.worker_thread = threading.Thread(
             target=run_mod_task,
             args=(
@@ -554,6 +560,7 @@ class App(FluentWindow):
             output_dir=Path(output_text),
             download_source=self.resolve_download_source(settings_widgets.server_download_source_combo),
             use_offline_database=settings_widgets.filter_use_offline_db_checkbox.isChecked(),
+            auto_update_offline_database=settings_widgets.filter_auto_update_offline_db_checkbox.isChecked(),
             use_mcmod=settings_widgets.filter_use_mcmod_checkbox.isChecked(),
             use_curseforge=settings_widgets.filter_use_cf_checkbox.isChecked(),
             enable_second_pass=settings_widgets.filter_second_pass_checkbox.isChecked(),
@@ -564,6 +571,8 @@ class App(FluentWindow):
         )
         if options.use_offline_database and not get_optional_offline_db_path().exists():
             self.append_log("server", f"未在程序目录旁找到可选离线库：{OFFLINE_DB_FILE_NAME}，本次会自动继续走联网查询。")
+        elif options.use_offline_database and options.auto_update_offline_database:
+            self.append_log("server", "已开启离线库自动检查更新，开始任务前会先尝试检查本地库。")
         self.worker_thread = threading.Thread(
             target=run_server_task,
             args=(

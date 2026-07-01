@@ -16,6 +16,7 @@ def _build_scan_request(options: ModTaskOptions) -> ScanModsRequest:
         use_mcmod=options.use_mcmod,
         use_curseforge=options.use_curseforge,
         use_offline_database=options.use_offline_database,
+        auto_update_offline_database=options.auto_update_offline_database,
         enable_second_pass=options.enable_second_pass,
     )
 
@@ -30,6 +31,7 @@ def _build_server_request(options: ServerTaskOptions) -> BuildServerRequest:
         use_mcmod=options.use_mcmod,
         use_curseforge=options.use_curseforge,
         use_offline_database=options.use_offline_database,
+        auto_update_offline_database=options.auto_update_offline_database,
         enable_second_pass=options.enable_second_pass,
         auto_download_java=options.auto_download_java,
         boot_timeout_mode=options.boot_timeout_mode,

@@ -24,6 +24,7 @@ class ScanModsRequest:
     use_mcmod: bool
     use_curseforge: bool
     use_offline_database: bool
+    auto_update_offline_database: bool
     enable_second_pass: bool
     output_dir: Optional[Path] = None
 
@@ -38,6 +39,7 @@ class BuildServerRequest:
     use_mcmod: bool
     use_curseforge: bool
     use_offline_database: bool
+    auto_update_offline_database: bool
     enable_second_pass: bool
     auto_download_java: bool = True
     boot_timeout_mode: str = SERVER_BOOT_TIMEOUT_SMART

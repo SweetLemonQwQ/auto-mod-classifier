@@ -23,6 +23,11 @@ class LegacyModScanService:
             classifier.use_offline_database = request.use_offline_database
             classifier.browser_warning_callback = lambda message: emit("warning", message)
             set_runtime_ref(classifier)
+            if request.use_offline_database:
+                classifier.offline_database.ensure_latest_database(
+                    auto_update=request.auto_update_offline_database,
+                    log_callback=lambda message: emit("log", message),
+                )
 
             jar_files = sorted(source.mods_path.glob("*.jar"), key=lambda item: item.name.lower())
             if not jar_files:
@@ -206,6 +211,11 @@ class LegacyServerBuildService:
             classifier.use_offline_database = request.use_offline_database
             classifier.browser_warning_callback = lambda message: emit("warning", message)
             set_runtime_ref(classifier)
+            if request.use_offline_database:
+                classifier.offline_database.ensure_latest_database(
+                    auto_update=request.auto_update_offline_database,
+                    log_callback=lambda message: emit("log", message),
+                )
 
             builder = ServerBuilderCore(
                 classifier=classifier,
