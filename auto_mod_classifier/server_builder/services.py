@@ -95,7 +95,228 @@ def _add_failure_finding(groups: Dict[str, Dict[str, Any]], kind: str, detail: s
         group["details"].append(cleaned)
 
 
-def collect_server_failure_context(install_log_lines: Sequence[str]) -> Dict[str, Any]:
+def _build_failure_snippet_lines(lines: Sequence[str], interesting_indexes: Sequence[int]) -> List[str]:
+    if not lines:
+        return []
+    if not interesting_indexes:
+        return list(lines[-min(len(lines), 80):])
+
+    windows: List[Tuple[int, int]] = []
+    for index in interesting_indexes[-4:]:
+        windows.append((max(0, index - 14), min(len(lines), index + 23)))
+    windows.sort()
+
+    merged: List[Tuple[int, int]] = []
+    for start, end in windows:
+        if not merged or start > merged[-1][1]:
+            merged.append((start, end))
+        else:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+
+    snippet_lines: List[str] = []
+    for start, end in merged:
+        if snippet_lines:
+            snippet_lines.append("...")
+        snippet_lines.extend(lines[start:end])
+
+    if len(snippet_lines) <= 90:
+        return snippet_lines
+    tail = snippet_lines[-89:]
+    return ["..."] + tail
+
+
+def _normalize_failure_lookup_key(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(text or "").lower())
+
+
+def _iter_failure_lookup_tokens(text: str) -> List[str]:
+    raw_text = str(text or "").strip()
+    if not raw_text:
+        return []
+
+    generic_tokens = {
+        "minecraft",
+        "forge",
+        "fabric",
+        "neoforge",
+        "quilt",
+        "java",
+        "client",
+        "server",
+        "mixin",
+        "mod",
+    }
+    values = [raw_text]
+    if "." in raw_text:
+        values.append(Path(raw_text).stem)
+
+    tokens: List[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = _normalize_failure_lookup_key(value)
+        if normalized and not normalized.isdigit() and normalized not in generic_tokens and normalized not in seen:
+            tokens.append(normalized)
+            seen.add(normalized)
+        for part in re.split(r"[^a-z0-9]+", value.lower()):
+            if len(part) < 3 or part.isdigit() or part in generic_tokens or part in seen:
+                continue
+            tokens.append(part)
+            seen.add(part)
+    return tokens
+
+
+def _extract_client_only_clue_tokens(snippet_text: str) -> List[str]:
+    patterns: List[Tuple[re.Pattern[str], Callable[[re.Match[str]], str]]] = [
+        (
+            re.compile(r"Mixin apply for mod\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?\s+failed", re.IGNORECASE),
+            lambda match: match.group("mod"),
+        ),
+        (
+            re.compile(r"provided by\s+'(?P<mod>[A-Za-z0-9_.\-]+)'", re.IGNORECASE),
+            lambda match: match.group("mod"),
+        ),
+        (
+            re.compile(r"from mod\s+'?(?P<mod>[A-Za-z0-9_.\-]+)'?", re.IGNORECASE),
+            lambda match: match.group("mod"),
+        ),
+        (
+            re.compile(r"Mixin config\s+(?P<config>[A-Za-z0-9_.\-]+)", re.IGNORECASE),
+            lambda match: match.group("config").split(".mixins", 1)[0].split(".mixin", 1)[0],
+        ),
+        (
+            re.compile(r"\[(?P<config>[A-Za-z0-9_.\-]+\.mixins?[^]]*)\]", re.IGNORECASE),
+            lambda match: match.group("config").split(".mixins", 1)[0].split(".mixin", 1)[0],
+        ),
+    ]
+
+    clue_tokens: List[str] = []
+    seen: set[str] = set()
+    for pattern, extractor in patterns:
+        for match in pattern.finditer(snippet_text):
+            token = _normalize_failure_text(extractor(match))
+            for candidate in _iter_failure_lookup_tokens(token):
+                if candidate not in seen:
+                    clue_tokens.append(candidate)
+                    seen.add(candidate)
+    return clue_tokens
+
+
+def _row_has_client_hint(row: Dict[str, Any]) -> bool:
+    if str(row.get("Environment") or "").strip().lower() == "client":
+        return True
+    entrypoints = str(row.get("Entrypoints") or "").lower()
+    if any(token in entrypoints for token in CLIENT_ENTRYPOINT_TOKEN_HINTS):
+        return True
+    reason = str(row.get("Reason") or "").lower()
+    return "client" in reason or "客户端" in reason
+
+
+def _row_lookup_tokens(row: Dict[str, Any]) -> set[str]:
+    tokens: set[str] = set()
+    for value in (
+        row.get("ModId"),
+        row.get("ModName"),
+        row.get("FileName"),
+        row.get("Path"),
+    ):
+        for token in _iter_failure_lookup_tokens(str(value or "")):
+            tokens.add(token)
+    return tokens
+
+
+def _match_selected_rows_by_clues(mod_results: Sequence[Dict[str, Any]], clue_tokens: Sequence[str]) -> List[Dict[str, Any]]:
+    if not clue_tokens:
+        return []
+
+    matched_rows: List[Dict[str, Any]] = []
+    seen_files: set[str] = set()
+    clue_set = {token for token in clue_tokens if token}
+    for row in mod_results:
+        if not row.get("SelectedForServer"):
+            continue
+        row_tokens = _row_lookup_tokens(row)
+        if not row_tokens.intersection(clue_set):
+            continue
+        file_name = str(row.get("FileName") or row.get("Path") or "")
+        if not file_name or file_name in seen_files:
+            continue
+        matched_rows.append(row)
+        seen_files.add(file_name)
+    return matched_rows
+
+
+def _format_failure_mod_label(row: Dict[str, Any]) -> str:
+    file_name = str(row.get("FileName") or row.get("Path") or "未知模组")
+    mod_name = _normalize_failure_text(str(row.get("ModName") or ""))
+    if mod_name and mod_name.lower() != Path(file_name).stem.lower():
+        return f"**{mod_name}**（{file_name}）"
+    return f"**{file_name}**"
+
+
+def _format_failure_mod_reason(row: Dict[str, Any]) -> str:
+    reason = _normalize_failure_text(str(row.get("Reason") or ""))
+    if not reason:
+        return ""
+    return f"线索：{reason}。"
+
+
+def _append_client_only_suspects(
+    findings_map: Dict[str, Dict[str, Any]],
+    snippet_text: str,
+    mod_results: Optional[Sequence[Dict[str, Any]]],
+) -> None:
+    client_only_pattern = re.compile(
+        r"(NoClassDefFoundError|ClassNotFoundException|Attempted to load class).*?(net[/\.]minecraft[/\.]client)",
+        re.IGNORECASE,
+    )
+    if not client_only_pattern.search(snippet_text):
+        return
+
+    _add_failure_finding(findings_map, "client-only", "日志里出现了 **net/minecraft/client/** 相关类，这通常是把只适合客户端的模组放进了服务端。")
+    if not mod_results:
+        return
+
+    clue_rows = _match_selected_rows_by_clues(mod_results, _extract_client_only_clue_tokens(snippet_text))
+    selected_client_only_rows = [
+        row
+        for row in mod_results
+        if row.get("SelectedForServer") and str(row.get("Category") or "") == "client-only"
+    ]
+    selected_unknown_rows = [
+        row
+        for row in mod_results
+        if row.get("SelectedForServer") and str(row.get("Category") or "") == "unknown" and _row_has_client_hint(row)
+    ]
+
+    if clue_rows:
+        labels = "、".join(_format_failure_mod_label(row) for row in clue_rows[:4])
+        _add_failure_finding(findings_map, "client-only", f"日志线索优先指向这些已复制模组：{labels}。")
+        for row in clue_rows[:3]:
+            detail = _format_failure_mod_reason(row)
+            _add_failure_finding(findings_map, "client-only", f"优先检查 {_format_failure_mod_label(row)}。{detail}".rstrip())
+
+    remaining_client_only = [
+        row for row in selected_client_only_rows if row not in clue_rows
+    ]
+    if remaining_client_only:
+        labels = "、".join(_format_failure_mod_label(row) for row in remaining_client_only[:4])
+        _add_failure_finding(findings_map, "client-only", f"这些模组已经被自动识别为 **纯客户端**，但这次仍被复制进了服务端：{labels}。")
+        for row in remaining_client_only[:2]:
+            detail = _format_failure_mod_reason(row)
+            _add_failure_finding(findings_map, "client-only", f"建议先移出 {_format_failure_mod_label(row)} 再重试。{detail}".rstrip())
+
+    remaining_unknown = [
+        row for row in selected_unknown_rows if row not in clue_rows and row not in remaining_client_only
+    ]
+    if remaining_unknown:
+        labels = "、".join(_format_failure_mod_label(row) for row in remaining_unknown[:4])
+        _add_failure_finding(findings_map, "client-only", f"这些已复制模组还没被完全确认，但带有明显客户端线索：{labels}。")
+
+
+def collect_server_failure_context(
+    install_log_lines: Sequence[str],
+    mod_results: Optional[Sequence[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """从启动/安装日志里提取更适合给用户看的失败摘要。"""
     lines = [str(line).rstrip() for line in install_log_lines if str(line).strip()]
     if not lines:
@@ -128,10 +349,7 @@ def collect_server_failure_context(install_log_lines: Sequence[str]) -> Dict[str
         if any(keyword in lowered for keyword in keywords):
             interesting_indexes.append(index)
 
-    anchor = interesting_indexes[-1] if interesting_indexes else len(lines) - 1
-    start = max(0, anchor - 20)
-    end = min(len(lines), anchor + 25)
-    snippet_lines = lines[start:end]
+    snippet_lines = _build_failure_snippet_lines(lines, interesting_indexes)
     snippet = "\n".join(snippet_lines)
     snippet_text = "\n".join(snippet_lines)
 
@@ -211,12 +429,7 @@ def collect_server_failure_context(install_log_lines: Sequence[str]) -> Dict[str
         if actual:
             _add_failure_finding(findings_map, "platform-version", f"当前环境实际是 **{actual}**。")
 
-    client_only_pattern = re.compile(
-        r"(NoClassDefFoundError|ClassNotFoundException|Attempted to load class).*?(net[/\.]minecraft[/\.]client)",
-        re.IGNORECASE,
-    )
-    if client_only_pattern.search(snippet_text):
-        _add_failure_finding(findings_map, "client-only", "日志里出现了 **net/minecraft/client/** 相关类，这通常是把只适合客户端的模组放进了服务端。")
+    _append_client_only_suspects(findings_map, snippet_text, mod_results)
 
     java_runtime_pattern = re.compile(
         r"class file version\s+(?P<required>\d+(?:\.\d+)?)\s*,\s*this version of the Java Runtime only recognizes class file versions up to\s+(?P<actual>\d+(?:\.\d+)?)",

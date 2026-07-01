@@ -243,7 +243,16 @@ class LegacyServerBuildService:
             if install_log_path.exists():
                 try:
                     install_lines = install_log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-                    diagnostic = collect_server_failure_context(install_lines)
+                    mod_results_path = report_dir / f"{MOD_REPORT_BASENAME}.json"
+                    mod_results = None
+                    if mod_results_path.exists():
+                        try:
+                            loaded = json.loads(mod_results_path.read_text(encoding="utf-8", errors="ignore"))
+                            if isinstance(loaded, list):
+                                mod_results = loaded
+                        except Exception:
+                            mod_results = None
+                    diagnostic = collect_server_failure_context(install_lines, mod_results)
                     snippet_path = report_dir / SERVER_FAILURE_SNIPPET_NAME
                     snippet_path.write_text(diagnostic.get("snippet", ""), encoding="utf-8")
                     failure_payload.update(
