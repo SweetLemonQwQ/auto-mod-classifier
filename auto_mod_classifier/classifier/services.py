@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from ..shared import Classification, LoaderType, ModMeta
+from .offline_database import OfflineDatabaseMatch
 from .contracts import (
     ClassificationStrategy,
     LocalClassifier,
@@ -304,6 +305,22 @@ class ModrinthRemoteSource:
             f"https://modrinth.com/mod/{hit.get('slug', '')}",
         )
 
+    def lookup_by_project_id(self, meta: ModMeta, project_id: str) -> Optional[Classification]:
+        project_id = str(project_id or "").strip()
+        if not project_id:
+            return None
+
+        cache_key = f"modrinth-project-id::{project_id}"
+        url = f"https://api.modrinth.com/v2/project/{urllib.parse.quote(project_id)}"
+        payload = self.classifier.modrinth_json_request(cache_key, url)
+        if not payload:
+            return None
+        return self._classification_from_payload(
+            payload,
+            "Modrinth(离线库直连)",
+            f"https://modrinth.com/mod/{payload.get('slug', '')}",
+        )
+
     def _direct_lookup(self, meta: ModMeta) -> Optional[Classification]:
         if not meta.mod_id or self.classifier.is_placeholder_value(meta.mod_id):
             return None
@@ -352,12 +369,31 @@ class OfflineDatabaseSource:
 
     def __init__(self, classifier):
         self.classifier = classifier
+        self.modrinth_source = ModrinthRemoteSource(classifier)
 
     def is_enabled(self, options: ClassificationOptions) -> bool:
         return options.use_offline_database and self.classifier.offline_database.is_available()
 
     def lookup(self, jar_path: Path, meta: ModMeta) -> Optional[Classification]:
-        return self.classifier.offline_database.lookup(jar_path, meta)
+        match = self.classifier.offline_database.find_match(jar_path)
+        if match is None:
+            return None
+
+        local_classification = self.classifier.offline_database.lookup(jar_path, meta)
+        if local_classification and local_classification.category != "unknown":
+            return local_classification
+
+        direct = self._lookup_precise_remote(meta, match)
+        if direct is not None:
+            return direct
+        return local_classification
+
+    def _lookup_precise_remote(self, meta: ModMeta, match: OfflineDatabaseMatch) -> Optional[Classification]:
+        if match.modrinth_project:
+            classification = self.modrinth_source.lookup_by_project_id(meta, match.modrinth_project)
+            if classification is not None:
+                return classification
+        return None
 
 
 class McmodRemoteSource:

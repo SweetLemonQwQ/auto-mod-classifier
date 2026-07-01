@@ -6,10 +6,34 @@ import sqlite3
 import threading
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
 from ..shared import CLIENT_ENTRYPOINTS, Classification, LoaderType, ModMeta, get_optional_offline_db_path
+
+
+@dataclass(frozen=True)
+class OfflineDatabaseMatch:
+    modrinth_project: str = ""
+    modrinth_version: str = ""
+    curseforge_project: str = ""
+    curseforge_file: str = ""
+    forge_mod_id: str = ""
+    forge_version: str = ""
+    fabric_mod_id: str = ""
+    fabric_version: str = ""
+
+    @property
+    def has_identity(self) -> bool:
+        return any(
+            (
+                self.modrinth_project,
+                self.curseforge_project,
+                self.forge_mod_id,
+                self.fabric_mod_id,
+            )
+        )
 
 
 class OfflineModDatabase:
@@ -23,11 +47,23 @@ class OfflineModDatabase:
         self._local = threading.local()
         self._update_lock = threading.Lock()
         self._last_update_summary = ""
+        self._broken = False
 
     def is_available(self) -> bool:
-        return self.db_path.exists() and self.db_path.is_file()
+        return not self._broken and self.db_path.exists() and self.db_path.is_file()
 
     def lookup(self, jar_path: Path, meta: ModMeta) -> Optional[Classification]:
+        match = self.find_match(jar_path)
+        if match is None:
+            return None
+
+        source, reason, evidence_url = self._build_evidence(match)
+        category = self.classify_meta_with_match(meta, match)
+        if not category:
+            return Classification("unknown", source, reason, evidence_url)
+        return Classification(category, source, reason, evidence_url)
+
+    def find_match(self, jar_path: Path) -> Optional[OfflineDatabaseMatch]:
         if not self.is_available():
             return None
 
@@ -35,36 +71,47 @@ class OfflineModDatabase:
         if not sha1:
             return None
 
-        connection = self._get_connection()
-        row = connection.execute(
-            """
-            SELECT
-                mr.project AS modrinth_project,
-                mr.version AS modrinth_version,
-                cf.project AS curseforge_project,
-                cf.file AS curseforge_file,
-                f.id AS forge_mod_id,
-                f.version AS forge_version,
-                fm.id AS fabric_mod_id,
-                fm.version AS fabric_version
-            FROM file base
-            LEFT JOIN modrinth_version mr ON mr.sha1 = base.sha1
-            LEFT JOIN curseforge_file cf ON cf.sha1 = base.sha1
-            LEFT JOIN forge_mod f ON f.sha1 = base.sha1
-            LEFT JOIN fabric_mod fm ON fm.sha1 = base.sha1
-            WHERE base.sha1 = ?
-            LIMIT 1
-            """,
-            (sha1,),
-        ).fetchone()
+        try:
+            connection = self._get_connection()
+            row = connection.execute(
+                """
+                SELECT
+                    mr.project AS modrinth_project,
+                    mr.version AS modrinth_version,
+                    cf.project AS curseforge_project,
+                    cf.file AS curseforge_file,
+                    f.id AS forge_mod_id,
+                    f.version AS forge_version,
+                    fm.id AS fabric_mod_id,
+                    fm.version AS fabric_version
+                FROM file base
+                LEFT JOIN modrinth_version mr ON mr.sha1 = base.sha1
+                LEFT JOIN curseforge_file cf ON cf.sha1 = base.sha1
+                LEFT JOIN forge_mod f ON f.sha1 = base.sha1
+                LEFT JOIN fabric_mod fm ON fm.sha1 = base.sha1
+                WHERE base.sha1 = ?
+                LIMIT 1
+                """,
+                (sha1,),
+            ).fetchone()
+        except sqlite3.DatabaseError:
+            self._mark_broken()
+            return None
+
         if row is None:
             return None
 
-        source, reason, evidence_url = self._build_evidence(row)
-        category = self._classify_from_meta(meta)
-        if not category:
-            return Classification("unknown", source, reason, evidence_url)
-        return Classification(category, source, reason, evidence_url)
+        match = OfflineDatabaseMatch(
+            modrinth_project=str(row["modrinth_project"] or "").strip(),
+            modrinth_version=str(row["modrinth_version"] or "").strip(),
+            curseforge_project=str(row["curseforge_project"] or "").strip(),
+            curseforge_file=str(row["curseforge_file"] or "").strip(),
+            forge_mod_id=str(row["forge_mod_id"] or "").strip(),
+            forge_version=str(row["forge_version"] or "").strip(),
+            fabric_mod_id=str(row["fabric_mod_id"] or "").strip(),
+            fabric_version=str(row["fabric_version"] or "").strip(),
+        )
+        return match if match.has_identity else None
 
     def close(self) -> None:
         connection = getattr(self._local, "connection", None)
@@ -108,6 +155,7 @@ class OfflineModDatabase:
 
             local_sha1 = self._compute_sha1(self.db_path) if self.is_available() else ""
             if self.is_available() and local_sha1 and latest_sha1 and local_sha1 == latest_sha1:
+                self._broken = False
                 self._last_update_summary = f"离线库已是最新版本：{latest_tag or '当前版本'}"
                 self._log(log_callback, self._last_update_summary)
                 return True
@@ -122,6 +170,7 @@ class OfflineModDatabase:
                 return self.is_available()
 
             self._last_update_summary = f"离线库已更新：{latest_tag or '最新版本'}"
+            self._broken = False
             self._log(log_callback, self._last_update_summary)
             return True
 
@@ -146,7 +195,7 @@ class OfflineModDatabase:
         except Exception:
             return ""
 
-    def _classify_from_meta(self, meta: ModMeta) -> Optional[str]:
+    def classify_meta_with_match(self, meta: ModMeta, _match: OfflineDatabaseMatch) -> Optional[str]:
         environment = str(meta.environment or "").strip().lower()
         if environment == "client":
             return "client-only"
@@ -179,18 +228,18 @@ class OfflineModDatabase:
             return True
         return any(token in normalized for token in CLIENT_ENTRYPOINTS)
 
-    def _build_evidence(self, row: sqlite3.Row) -> tuple[str, str, str]:
+    def _build_evidence(self, match: OfflineDatabaseMatch) -> tuple[str, str, str]:
         reason_parts = ["本地离线库命中"]
         evidence_url = ""
 
-        modrinth_project = str(row["modrinth_project"] or "").strip()
-        modrinth_version = str(row["modrinth_version"] or "").strip()
-        curseforge_project = str(row["curseforge_project"] or "").strip()
-        curseforge_file = str(row["curseforge_file"] or "").strip()
-        forge_mod_id = str(row["forge_mod_id"] or "").strip()
-        forge_version = str(row["forge_version"] or "").strip()
-        fabric_mod_id = str(row["fabric_mod_id"] or "").strip()
-        fabric_version = str(row["fabric_version"] or "").strip()
+        modrinth_project = match.modrinth_project
+        modrinth_version = match.modrinth_version
+        curseforge_project = match.curseforge_project
+        curseforge_file = match.curseforge_file
+        forge_mod_id = match.forge_mod_id
+        forge_version = match.forge_version
+        fabric_mod_id = match.fabric_mod_id
+        fabric_version = match.fabric_version
 
         if modrinth_project:
             reason_parts.append(f"Modrinth 项目 {modrinth_project}")
@@ -273,3 +322,7 @@ class OfflineModDatabase:
             log_callback(message)
         except Exception:
             pass
+
+    def _mark_broken(self) -> None:
+        self._broken = True
+        self.close()
