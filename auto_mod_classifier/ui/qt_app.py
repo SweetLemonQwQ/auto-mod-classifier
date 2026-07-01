@@ -53,6 +53,7 @@ from ..shared import (
 from ..tasks import run_mod_task, run_server_task
 from .qt_dialogs import (
     ChecklistDialog,
+    ServerFailureDiagnosticDialog,
     VersionSelectionDialog,
     themed_critical,
     themed_get_existing_directory,
@@ -730,24 +731,39 @@ class App(FluentWindow):
                         payload.get("summary", payload["status"]),
                     )
             elif kind == "error":
+                error_text = str(payload)
+                diagnostic_payload = payload if isinstance(payload, dict) else None
+                if diagnostic_payload is not None:
+                    error_text = str(diagnostic_payload.get("traceback", ""))
                 panel.status_label.setText("运行失败")
                 panel.status_dot.set_state("error")
                 panel.output_label.setText("输出位置：未生成")
                 panel.download_label.setText(build_idle_download_status_text())
-                panel.summary_edit.setPlainText(str(payload))
+                panel.summary_edit.setPlainText(error_text)
                 panel.stage_label.setText("当前步骤：处理失败")
                 if panel.stage_board is not None:
-                    panel.stage_board.fail(self._summarize_error_text(str(payload)))
-                self.append_log(panel_key, str(payload))
+                    panel.stage_board.fail(self._summarize_error_text(error_text))
+                self.append_log(panel_key, error_text)
                 if panel.metric_cards:
                     for metric_card in panel.metric_cards.values():
                         metric_card.set_value("失败")
-                self._update_report_section(panel_key, "运行失败", str(payload), panel.result_dir, panel.extra_dir)
+                self._update_report_section(panel_key, "运行失败", error_text, panel.result_dir, panel.extra_dir)
                 self._refresh_home_overview(panel_key=panel_key, status="失败", output=None)
                 self._set_busy_state(False)
                 if not self._task_dialog_shown.get(panel_key, False):
                     self._task_dialog_shown[panel_key] = True
-                    self.show_error(self._summarize_error_text(str(payload)))
+                    if panel_key == "server" and isinstance(diagnostic_payload, dict) and diagnostic_payload.get("kind") == "server-launch-diagnostic":
+                        diagnostic = diagnostic_payload.get("diagnostic") or {}
+                        dialog = ServerFailureDiagnosticDialog(
+                            summary=str(diagnostic.get("summary") or "服务端启动失败。"),
+                            suspicions=list(diagnostic.get("suspicions") or []),
+                            suspect_mods=list(diagnostic.get("suspect_mods") or []),
+                            snippet=str(diagnostic.get("snippet") or ""),
+                            parent=self,
+                        )
+                        dialog.exec()
+                    else:
+                        self.show_error(self._summarize_error_text(error_text))
             elif kind == "ui-request":
                 if payload["kind"] == "version":
                     dialog = VersionSelectionDialog(payload["candidates"], self)

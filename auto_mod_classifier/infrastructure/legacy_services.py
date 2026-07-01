@@ -2,6 +2,7 @@ from ..application.models import BuildServerRequest, PreparedModScanSource, Prep
 from ..classifier import ClassifierCore, classify_jars_parallel, rerun_unknown_classifications
 from ..download_support import build_idle_download_status_text
 from ..server_builder import ServerBuilderCore
+from ..server_builder.services import collect_server_failure_context
 from ..shared import *
 
 
@@ -235,7 +236,28 @@ class LegacyServerBuildService:
             )
         except Exception:
             emit("download-stats", build_idle_download_status_text())
-            emit("error", traceback.format_exc())
+            error_text = traceback.format_exc()
+            report_dir = request.output_dir / TOOL_DIR_NAME
+            install_log_path = report_dir / INSTALL_LOG_NAME
+            failure_payload: Dict[str, Any] = {"traceback": error_text}
+            if install_log_path.exists():
+                try:
+                    install_lines = install_log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+                    diagnostic = collect_server_failure_context(install_lines)
+                    snippet_path = report_dir / SERVER_FAILURE_SNIPPET_NAME
+                    snippet_path.write_text(diagnostic.get("snippet", ""), encoding="utf-8")
+                    failure_payload.update(
+                        {
+                            "kind": "server-launch-diagnostic",
+                            "report_dir": report_dir,
+                            "install_log_path": install_log_path,
+                            "snippet_path": snippet_path,
+                            "diagnostic": diagnostic,
+                        }
+                    )
+                except Exception:
+                    pass
+            emit("error", failure_payload if failure_payload.get("kind") else error_text)
             has_server = False
             try:
                 has_server = any(request.output_dir.glob("*.jar")) if request.output_dir.exists() else False

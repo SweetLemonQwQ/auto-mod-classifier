@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import BodyLabel, CheckBox, PrimaryPushButton, PushButton, StrongBodyLabel
+from qfluentwidgets import BodyLabel, CheckBox, PlainTextEdit, PrimaryPushButton, PushButton, StrongBodyLabel
 
 from ..shared import ReviewItem, VersionCandidate
 from . import qt_theme
@@ -253,6 +253,129 @@ def themed_warning(parent: Optional[QWidget], title: str, message: str) -> None:
 def themed_critical(parent: Optional[QWidget], title: str, message: str) -> None:
     dialog = ThemedMessageDialog(title, message, kind="error", parent=parent)
     dialog.exec()
+
+
+class ServerFailureDiagnosticDialog(QDialog):
+    """服务端最终启动失败时的诊断弹窗。"""
+
+    def __init__(
+        self,
+        *,
+        summary: str,
+        suspicions: List[str],
+        suspect_mods: List[str],
+        snippet: str,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._snippet = snippet or ""
+        self.setWindowTitle("服务端启动失败")
+        self.resize(760, 560)
+        self.setMinimumSize(700, 500)
+        self.setObjectName("serverFailureDiagnosticDialog")
+
+        apply_themed_style(
+            self,
+            lambda: f"""
+            QDialog#serverFailureDiagnosticDialog {{
+                background-color: {qt_theme.BG_CONTENT};
+            }}
+            """,
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(SPACING_LG, SPACING_LG, SPACING_LG, SPACING_LG)
+        layout.setSpacing(SPACING_MD)
+
+        header_card = QFrame(self)
+        apply_card_style(header_card, "soft")
+        header_layout = QVBoxLayout(header_card)
+        header_layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_MD)
+        header_layout.setSpacing(6)
+
+        title_label = StrongBodyLabel("服务端启动失败", header_card)
+        apply_themed_style(
+            title_label,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_XL}px; font-weight: 700;",
+        )
+        header_layout.addWidget(title_label)
+
+        summary_label = BodyLabel(summary, header_card)
+        summary_label.setWordWrap(True)
+        apply_label_tone(summary_label, level=2, size=FONT_SIZE_MD)
+        header_layout.addWidget(summary_label)
+        layout.addWidget(header_card)
+
+        if suspect_mods:
+            mods_label = BodyLabel(f"可疑模组：{', '.join(suspect_mods)}", self)
+            mods_label.setWordWrap(True)
+            apply_label_tone(mods_label, muted=False, size=FONT_SIZE_SM)
+            layout.addWidget(mods_label)
+
+        hints_card = QFrame(self)
+        apply_card_style(hints_card, "panel")
+        hints_layout = QVBoxLayout(hints_card)
+        hints_layout.setContentsMargins(SPACING_LG, SPACING_MD, SPACING_LG, SPACING_MD)
+        hints_layout.setSpacing(SPACING_SM)
+
+        hints_title = StrongBodyLabel("可能原因", hints_card)
+        apply_themed_style(
+            hints_title,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 700;",
+        )
+        hints_layout.addWidget(hints_title)
+        for item in suspicions:
+            hint_label = BodyLabel(f"- {item}", hints_card)
+            hint_label.setWordWrap(True)
+            apply_label_tone(hint_label, level=2, size=FONT_SIZE_SM)
+            hints_layout.addWidget(hint_label)
+
+        ai_hint = BodyLabel("建议点击“复制关键报错”，再把内容发给 DeepSeek、豆包等 AI 继续排查。", hints_card)
+        ai_hint.setWordWrap(True)
+        apply_label_tone(ai_hint, muted=True, size=FONT_SIZE_SM)
+        hints_layout.addWidget(ai_hint)
+        layout.addWidget(hints_card)
+
+        snippet_title = StrongBodyLabel("关键报错片段", self)
+        apply_themed_style(
+            snippet_title,
+            lambda: f"color: {qt_theme.TEXT_PRIMARY}; background: transparent; font-size: {FONT_SIZE_MD}px; font-weight: 700;",
+        )
+        layout.addWidget(snippet_title)
+
+        snippet_edit = PlainTextEdit(self)
+        snippet_edit.setReadOnly(True)
+        snippet_edit.setPlainText(self._snippet or "未提取到关键报错片段。")
+        snippet_edit.setMinimumHeight(220)
+        apply_themed_style(
+            snippet_edit,
+            lambda: f"""
+            color: {qt_theme.TEXT_PRIMARY};
+            background-color: {qt_theme.EDITOR_BG};
+            border: 1px solid {qt_theme.BORDER_STRONG};
+            border-radius: {RADIUS_MD}px;
+            font-size: {FONT_SIZE_XS}px;
+            """,
+        )
+        layout.addWidget(snippet_edit, 1)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+
+        copy_button = PushButton("复制关键报错", self)
+        _apply_dialog_button_size(copy_button)
+        copy_button.clicked.connect(self.copy_snippet)
+        button_row.addWidget(copy_button)
+
+        confirm_button = PrimaryPushButton("确定", self)
+        _apply_dialog_button_size(confirm_button)
+        _apply_dialog_primary_button_style(confirm_button)
+        confirm_button.clicked.connect(self.accept)
+        button_row.addWidget(confirm_button)
+        layout.addLayout(button_row)
+
+    def copy_snippet(self) -> None:
+        QApplication.clipboard().setText(self._snippet)
 
 
 class VersionSelectionDialog(QDialog):

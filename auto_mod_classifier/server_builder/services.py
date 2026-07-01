@@ -8,6 +8,89 @@ from .common import ServerBuilderCommonService
 from .context import ServerBuilderRuntime
 
 
+def collect_server_failure_context(install_log_lines: Sequence[str]) -> Dict[str, Any]:
+    """从启动/安装日志里提取更适合给用户看的失败摘要。"""
+    lines = [str(line).rstrip() for line in install_log_lines if str(line).strip()]
+    if not lines:
+        return {
+            "summary": "服务端制作大部分已完成，但没有读取到足够的启动报错信息。",
+            "suspicions": ["建议先打开安装阶段日志，确认服务端最后停在什么位置。"],
+            "suspect_mods": [],
+            "snippet": "",
+        }
+
+    keywords = (
+        "exception",
+        "error",
+        "failed",
+        "caused by",
+        "mixin",
+        "modresolutionexception",
+        "missing dependency",
+        "requires",
+        "conflict",
+        "duplicate",
+        "unsupported class file major version",
+        "noclassdeffounderror",
+        "classnotfoundexception",
+    )
+    interesting_indexes: List[int] = []
+    for index, line in enumerate(lines):
+        lowered = line.lower()
+        if any(keyword in lowered for keyword in keywords):
+            interesting_indexes.append(index)
+
+    anchor = interesting_indexes[-1] if interesting_indexes else len(lines) - 1
+    start = max(0, anchor - 20)
+    end = min(len(lines), anchor + 25)
+    snippet_lines = lines[start:end]
+    snippet = "\n".join(snippet_lines)
+
+    suspect_mods: List[str] = []
+    suspicions: List[str] = []
+    patterns = (
+        r"mod\s+'([^']+)'",
+        r"mod\s+([A-Za-z0-9_.\-]+)",
+        r"([A-Za-z0-9_.\-]+)\s+requires",
+        r"([A-Za-z0-9_.\-]+)\s+conflicts?\s+with",
+        r"duplicate mod\s+([A-Za-z0-9_.\-]+)",
+    )
+
+    for line in snippet_lines:
+        lowered = line.lower()
+        if "unsupported class file major version" in lowered or "java.lang.unsupportedclassversionerror" in lowered:
+            suspicions.append("Java 版本和当前服务端或模组要求不匹配。")
+        if "missing dependency" in lowered or "could not find required mod" in lowered:
+            suspicions.append("有模组缺少前置依赖。")
+        if "conflict" in lowered or "duplicate" in lowered:
+            suspicions.append("存在模组冲突或重复安装。")
+        if "mixin apply failed" in lowered or "mixintransformererror" in lowered:
+            suspicions.append("Mixin 注入失败，通常是模组版本不兼容或彼此冲突。")
+        if "requires minecraft" in lowered or "requires forge" in lowered or "requires fabric" in lowered:
+            suspicions.append("某些模组要求的 Minecraft / Forge / Fabric 版本和当前服务端不一致。")
+        if "noclassdeffounderror" in lowered or "classnotfoundexception" in lowered:
+            suspicions.append("可能混入了纯客户端模组，或某个关键前置没有装上。")
+
+        for pattern in patterns:
+            for match in re.findall(pattern, line, flags=re.IGNORECASE):
+                mod_name = str(match).strip()
+                if len(mod_name) >= 3 and mod_name.lower() not in {"java", "minecraft", "forge", "fabric"}:
+                    if mod_name not in suspect_mods:
+                        suspect_mods.append(mod_name)
+
+    if suspect_mods:
+        suspicions.insert(0, f"日志里提到了这些可疑模组：{', '.join(suspect_mods[:4])}")
+    if not suspicions:
+        suspicions.append("更像是模组冲突、前置缺失或版本不兼容导致的启动失败。")
+
+    return {
+        "summary": "服务端制作大部分已完成，当前主要卡在最终启动验证。",
+        "suspicions": suspicions[:4],
+        "suspect_mods": suspect_mods[:6],
+        "snippet": snippet,
+    }
+
+
 class ServerVersionService:
     """识别客户端版本，并解析应该下载哪个官方安装器。"""
 
