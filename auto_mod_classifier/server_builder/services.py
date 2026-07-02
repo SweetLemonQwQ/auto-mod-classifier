@@ -1437,26 +1437,59 @@ class ServerInstallService:
                 digest.update(chunk)
         return digest.hexdigest().lower()
 
+    def _resolve_vanilla_server_target_path(self, output_root: Path, candidate: VersionCandidate) -> Path:
+        if candidate.loader in {LoaderType.FORGE.value, LoaderType.NEOFORGE.value}:
+            return (
+                output_root
+                / "libraries"
+                / "net"
+                / "minecraft"
+                / "server"
+                / candidate.minecraft_version
+                / f"server-{candidate.minecraft_version}.jar"
+            )
+        return output_root / "server.jar"
+
     def prepare_vanilla_server_jar(self, output_root: Path, candidate: VersionCandidate) -> bool:
-        server_jar_path = output_root / "server.jar"
+        server_jar_path = self._resolve_vanilla_server_target_path(output_root, candidate)
+        legacy_root_server_jar = output_root / "server.jar"
         try:
             download_url, expected_sha1 = self._resolve_vanilla_server_download_entry(candidate)
         except Exception as exc:
             self.common.log_line(f"提前准备 Minecraft 原版服务端失败，本次回退为安装器自行下载：{exc}")
             return False
 
+        if (
+            legacy_root_server_jar != server_jar_path
+            and legacy_root_server_jar.exists()
+            and not server_jar_path.exists()
+            and expected_sha1
+            and self._calculate_sha1(legacy_root_server_jar) == expected_sha1.lower()
+        ):
+            server_jar_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(legacy_root_server_jar, server_jar_path)
+            self.common.log_line(
+                "已复用上一次下载到根目录的原版服务端，"
+                f"并迁移到安装器需要的位置：{server_jar_path}"
+            )
+            return True
+
         if server_jar_path.exists() and expected_sha1:
             actual_sha1 = self._calculate_sha1(server_jar_path)
             if actual_sha1 == expected_sha1.lower():
-                self.common.log_line(f"已复用现有原版服务端：{server_jar_path.name}")
+                self.common.log_line(f"已复用现有原版服务端：{server_jar_path}")
                 return True
-            self.common.log_line("检测到现有 server.jar 与目标版本校验不一致，准备重新下载。")
+            self.common.log_line(f"检测到现有原版服务端与目标版本校验不一致，准备重新下载：{server_jar_path}")
             try:
                 server_jar_path.unlink()
             except OSError:
                 pass
 
-        self.common.log_line(f"提前下载 Minecraft {candidate.minecraft_version} 原版服务端，避免安装器内部下载超时。")
+        server_jar_path.parent.mkdir(parents=True, exist_ok=True)
+        self.common.log_line(
+            f"提前下载 Minecraft {candidate.minecraft_version} 原版服务端到安装器路径，"
+            "避免安装器内部下载超时。"
+        )
         reporter = DownloadStatsReporter(self.runtime.set_download_status, total_files=1, thread_limit=1)
         try:
             self.common.http_download(
