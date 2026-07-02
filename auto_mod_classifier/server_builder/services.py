@@ -1,3 +1,4 @@
+import hashlib
 import re
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -1328,7 +1329,161 @@ class ServerInstallService:
             reporter.close()
         return destination
 
+    def _read_json_file(self, path: Path) -> Optional[Dict[str, Any]]:
+        if not path.is_file():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    def _extract_server_download_entry(self, data: Optional[Dict[str, Any]]) -> Optional[Tuple[str, str]]:
+        if not isinstance(data, dict):
+            return None
+        downloads = data.get("downloads") or {}
+        if not isinstance(downloads, dict):
+            return None
+        server = downloads.get("server") or {}
+        if not isinstance(server, dict):
+            return None
+        url = str(server.get("url") or "").strip()
+        sha1 = str(server.get("sha1") or "").strip()
+        if not url:
+            return None
+        return url, sha1
+
+    def _iter_local_manifest_paths(self, candidate: VersionCandidate) -> List[Path]:
+        manifest_paths: List[Path] = []
+        seen: set[Path] = set()
+
+        def add_path(path: Path) -> None:
+            resolved = path.resolve()
+            if resolved in seen:
+                return
+            seen.add(resolved)
+            manifest_paths.append(path)
+
+        add_path(candidate.json_path)
+        current_data = self._read_json_file(candidate.json_path) or {}
+        version_ids = [
+            str(current_data.get("inheritsFrom") or "").strip(),
+            candidate.minecraft_version,
+        ]
+        for version_id in version_ids:
+            if not version_id:
+                continue
+            add_path(candidate.json_path.parent / f"{version_id}.json")
+
+        related_roots: List[Path] = []
+        for base in [candidate.json_path.parent, *candidate.json_path.parents]:
+            if base.name.lower() == "versions":
+                related_roots.append(base)
+            versions_dir = base / "versions"
+            if versions_dir.is_dir():
+                related_roots.append(versions_dir)
+
+        root_seen: set[Path] = set()
+        for related_root in related_roots:
+            resolved_root = related_root.resolve()
+            if resolved_root in root_seen:
+                continue
+            root_seen.add(resolved_root)
+            for version_id in version_ids:
+                if not version_id:
+                    continue
+                add_path(related_root / version_id / f"{version_id}.json")
+
+        return manifest_paths
+
+    def _resolve_vanilla_server_download_entry(self, candidate: VersionCandidate) -> Tuple[str, str]:
+        for manifest_path in self._iter_local_manifest_paths(candidate):
+            entry = self._extract_server_download_entry(self._read_json_file(manifest_path))
+            if entry:
+                self.common.log_line(f"已从本地版本清单解析到 Minecraft {candidate.minecraft_version} 原版服务端下载信息。")
+                return entry
+
+        self.common.log_line(
+            f"本地版本清单未提供 Minecraft {candidate.minecraft_version} 原版服务端下载信息，"
+            "改为联网查询官方版本清单。"
+        )
+        manifest_index = self.common.http_get_json("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json")
+        versions = manifest_index.get("versions") if isinstance(manifest_index, dict) else None
+        if not isinstance(versions, list):
+            raise RuntimeError("Minecraft 官方版本清单返回异常，无法解析原版服务端下载地址。")
+
+        version_url = ""
+        for item in versions:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("id") or "").strip() == candidate.minecraft_version:
+                version_url = str(item.get("url") or "").strip()
+                break
+        if not version_url:
+            raise RuntimeError(f"Minecraft 官方版本清单中未找到版本 {candidate.minecraft_version}。")
+
+        version_manifest = self.common.http_get_json(version_url)
+        entry = self._extract_server_download_entry(version_manifest)
+        if not entry:
+            raise RuntimeError(f"Minecraft {candidate.minecraft_version} 版本清单未提供原版服务端下载信息。")
+        return entry
+
+    def _calculate_sha1(self, path: Path) -> str:
+        digest = hashlib.sha1()
+        with path.open("rb") as file_obj:
+            while True:
+                chunk = file_obj.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest().lower()
+
+    def prepare_vanilla_server_jar(self, output_root: Path, candidate: VersionCandidate) -> bool:
+        server_jar_path = output_root / "server.jar"
+        try:
+            download_url, expected_sha1 = self._resolve_vanilla_server_download_entry(candidate)
+        except Exception as exc:
+            self.common.log_line(f"提前准备 Minecraft 原版服务端失败，本次回退为安装器自行下载：{exc}")
+            return False
+
+        if server_jar_path.exists() and expected_sha1:
+            actual_sha1 = self._calculate_sha1(server_jar_path)
+            if actual_sha1 == expected_sha1.lower():
+                self.common.log_line(f"已复用现有原版服务端：{server_jar_path.name}")
+                return True
+            self.common.log_line("检测到现有 server.jar 与目标版本校验不一致，准备重新下载。")
+            try:
+                server_jar_path.unlink()
+            except OSError:
+                pass
+
+        self.common.log_line(f"提前下载 Minecraft {candidate.minecraft_version} 原版服务端，避免安装器内部下载超时。")
+        reporter = DownloadStatsReporter(self.runtime.set_download_status, total_files=1, thread_limit=1)
+        try:
+            self.common.http_download(
+                download_url,
+                server_jar_path,
+                reporter=reporter,
+                log_callback=self.common.log_line,
+                display_name=f"minecraft-server-{candidate.minecraft_version}.jar",
+            )
+        except Exception as exc:
+            self.common.log_line(f"提前下载原版服务端失败，本次回退为安装器自行下载：{exc}")
+            return False
+        finally:
+            reporter.close()
+
+        if expected_sha1:
+            actual_sha1 = self._calculate_sha1(server_jar_path)
+            if actual_sha1 != expected_sha1.lower():
+                raise RuntimeError(
+                    "原版服务端下载完成，但校验失败："
+                    f"期望 {expected_sha1.lower()}，实际 {actual_sha1}"
+                )
+        self.common.log_line(f"原版服务端已准备完成：{server_jar_path}")
+        return True
+
     def install_server(self, output_root: Path, candidate: VersionCandidate, installer_path: Path, java_runtime: JavaRuntime) -> None:
+        prepared_server_jar = self.prepare_vanilla_server_jar(output_root, candidate)
         if candidate.loader == LoaderType.FABRIC.value:
             args = [
                 str(java_runtime.path),
@@ -1341,8 +1496,9 @@ class ServerInstallService:
                 candidate.minecraft_version,
                 "-loader",
                 candidate.loader_version,
-                "-downloadMinecraft",
             ]
+            if not prepared_server_jar:
+                args.append("-downloadMinecraft")
         else:
             args = [str(java_runtime.path), "-jar", str(installer_path), "--installServer", str(output_root)]
         install_step = 0
