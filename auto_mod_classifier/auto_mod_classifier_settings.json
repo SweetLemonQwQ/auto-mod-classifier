@@ -1,0 +1,15 @@
+{
+  "filter_dry_run": false,
+  "filter_use_offline_database": false,
+  "filter_auto_update_offline_database": true,
+  "filter_use_mcmod": true,
+  "filter_use_curseforge_api": true,
+  "filter_use_curseforge": false,
+  "filter_second_pass": false,
+  "server_output_path": "",
+  "server_download_source": "smart",
+  "java_rule_index": 1,
+  "auto_download_java": false,
+  "server_boot_timeout_mode": "smart",
+  "theme_index": 2
+}
