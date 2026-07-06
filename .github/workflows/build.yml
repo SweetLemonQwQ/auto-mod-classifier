@@ -26,14 +26,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Extract version from version info
+      - name: Extract version from source
         id: version
         run: |
-          $content = Get-Content "pyinstaller_version_info.txt" -Raw
-          if ($content -match '"FileVersion",\s*"([^"]+)"') {
+          $content = Get-Content "自动筛选模组分类器.pyw" -Raw
+          if ($content -match 'VERSION\s*=\s*"([^"]+)"') {
             $ver = $matches[1]
-          } elseif ($content -match 'filevers=\((\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)') {
-            $ver = "$($matches[1]).$($matches[2]).$($matches[3])"
           } else {
             $ver = "0.0.0"
           }
@@ -42,7 +40,7 @@ jobs:
       
       - name: Build EXE with PyInstaller
         run: |
-          python -m PyInstaller --noconfirm --clean --noconsole --onefile --hidden-import=DrissionPage --exclude-module=cv2 --exclude-module=PIL --exclude-module=numpy --exclude-module=openpyxl --exclude-module=cloudscraper --exclude-module=curl_cffi --name "auto-mod-classifier-${{ steps.version.outputs.VERSION }}" --icon "自动筛选模组分类器.ico" --version-file "pyinstaller_version_info.txt" "自动筛选模组分类器.pyw"
+          python -m PyInstaller --noconfirm --clean --noconsole --onefile --hidden-import=DrissionPage --exclude-module=cv2 --exclude-module=PIL --exclude-module=numpy --exclude-module=openpyxl --exclude-module=cloudscraper --exclude-module=curl_cffi --name "auto-mod-classifier-${{ steps.version.outputs.VERSION }}" --icon "自动筛选模组分类器.ico" "自动筛选模组分类器.pyw"
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
