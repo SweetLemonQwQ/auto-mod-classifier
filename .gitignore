@@ -1,12 +1,30 @@
-/*
-!README.md
-!打包发布.bat
-!启动自动筛选模组分类器.bat
-!自动筛选模组分类器.ico
-!自动筛选模组分类器.pyw
-!pyinstaller_version_info.txt
-!auto_mod_classifier/
-!auto_mod_classifier/**
-!.gitignore
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
