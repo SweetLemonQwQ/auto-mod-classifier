@@ -1,7 +1,8 @@
 # PyInstaller for packaging
 pyinstaller
-# Qt bindings
+# Qt bindings (also dependency of PySide6-Fluent-Widgets)
 PySide6
-qfluentwidgets
+# Fluent widgets for PySide6 (import as qfluentwidgets)
+PySide6-Fluent-Widgets
 # Browser automation (hidden import for PyInstaller)
 DrissionPage
