@@ -1,0 +1,58 @@
+name: Build and Release EXE
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Build EXE with PyInstaller
+        run: |
+          python -m PyInstaller --noconfirm --clean --noconsole --onefile --hidden-import=DrissionPage --exclude-module=cv2 --exclude-module=PIL --exclude-module=numpy --exclude-module=openpyxl --exclude-module=cloudscraper --exclude-module=curl_cffi --name "自动筛选模组分类器" --icon "自动筛选模组分类器.ico" --version-file "pyinstaller_version_info.txt" "自动筛选模组分类器.pyw"
+      
+      - name: Prepare release artifact
+        run: |
+          Copy-Item "dist\自动筛选模组分类器.exe" "dist\auto-mod-classifier-3.01.exe"
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-mod-classifier-exe
+          path: dist/*.exe
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/heads/main')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Release ${{ github.run_number }}
+          body: |
+            Automated build from commit ${{ github.sha }}
+            
+            ## 下载
+            - `auto-mod-classifier-3.01.exe` - 主程序
+          files: dist/*.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,7 @@
+# PyInstaller for packaging
+pyinstaller
+# Qt bindings
+PySide6
+qfluentwidgets
+# Browser automation (hidden import for PyInstaller)
+DrissionPage
