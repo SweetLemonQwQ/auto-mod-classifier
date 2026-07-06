@@ -26,13 +26,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
+      - name: Extract version from version info
+        id: version
+        run: |
+          $content = Get-Content "pyinstaller_version_info.txt" -Raw
+          if ($content -match '"FileVersion",\s*"([^"]+)"') {
+            $ver = $matches[1]
+          } elseif ($content -match 'filevers=\((\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)') {
+            $ver = "$($matches[1]).$($matches[2]).$($matches[3])"
+          } else {
+            $ver = "0.0.0"
+          }
+          echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
+          echo "Detected version: $ver"
+      
       - name: Build EXE with PyInstaller
         run: |
-          python -m PyInstaller --noconfirm --clean --noconsole --onefile --hidden-import=DrissionPage --exclude-module=cv2 --exclude-module=PIL --exclude-module=numpy --exclude-module=openpyxl --exclude-module=cloudscraper --exclude-module=curl_cffi --name "自动筛选模组分类器" --icon "自动筛选模组分类器.ico" --version-file "pyinstaller_version_info.txt" "自动筛选模组分类器.pyw"
-      
-      - name: Prepare release artifact
-        run: |
-          Copy-Item "dist\自动筛选模组分类器.exe" "dist\auto-mod-classifier-3.01.exe"
+          python -m PyInstaller --noconfirm --clean --noconsole --onefile --hidden-import=DrissionPage --exclude-module=cv2 --exclude-module=PIL --exclude-module=numpy --exclude-module=openpyxl --exclude-module=cloudscraper --exclude-module=curl_cffi --name "auto-mod-classifier-${{ steps.version.outputs.VERSION }}" --icon "自动筛选模组分类器.ico" --version-file "pyinstaller_version_info.txt" "自动筛选模组分类器.pyw"
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -44,13 +54,13 @@ jobs:
         if: startsWith(github.ref, 'refs/heads/main')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: Release ${{ github.run_number }}
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: v${{ steps.version.outputs.VERSION }}
           body: |
             Automated build from commit ${{ github.sha }}
             
             ## 下载
-            - `auto-mod-classifier-3.01.exe` - 主程序
+            - `auto-mod-classifier-${{ steps.version.outputs.VERSION }}.exe` - 主程序
           files: dist/*.exe
           draft: false
           prerelease: false
